@@ -4,6 +4,8 @@ const request = require('request');
 const querystring = require('querystring');
 const path = require('path');
 const OpenAI = require('openai');
+const fs = require('fs');
+const fsp = require('fs').promises;
 
 const app = express();
 const PORT = process.env.PORT || 8888;
@@ -12,6 +14,9 @@ const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:8888/callback';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const SERVER_DEBUG = process.env.SERVER_DEBUG === '1' || process.env.DEBUG === '1';
+const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
+const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'alloy';
+const TTS_OUTPUT_DIR = process.env.TTS_OUTPUT_DIR || path.join(__dirname, 'public', 'tts');
 
 // Middlewares
 app.use(express.json());
@@ -26,6 +31,57 @@ app.get('/config.js', (_req, res) => {
   res.type('application/javascript').send(
     `// Generated from server env\nwindow.CLIENT_DEBUG = ${JSON.stringify(clientDebug)};\n`
   );
+});
+
+// Generate TTS MP3s for an array of narration texts; returns array of URLs
+app.post('/api/tts-batch', async (req, res) => {
+  try {
+    const { segments } = req.body || {};
+    if (!Array.isArray(segments) || segments.length === 0) {
+      return res.status(400).json({ error: 'segments must be a non-empty array of { text }' });
+    }
+    await fsp.mkdir(TTS_OUTPUT_DIR, { recursive: true });
+    dbg('tts-batch: start', { count: segments.length, model: OPENAI_TTS_MODEL, voice: OPENAI_TTS_VOICE, outDir: TTS_OUTPUT_DIR });
+
+    const urls = [];
+    let idx = 0;
+    for (const seg of segments) {
+      const text = (seg && typeof seg.text === 'string') ? seg.text.trim() : '';
+      if (!text) {
+        urls.push(null);
+        idx++;
+        continue;
+      }
+      // Make a filename
+      const safeBase = `tts_${Date.now()}_${idx}`;
+      const fileName = `${safeBase}.mp3`;
+      const filePath = path.join(TTS_OUTPUT_DIR, fileName);
+      const publicUrl = `/tts/${fileName}`;
+
+      try {
+        dbg('tts-batch: request', { i: idx, len: text.length });
+        const speech = await openai.audio.speech.create({
+          model: OPENAI_TTS_MODEL,
+          voice: OPENAI_TTS_VOICE,
+          input: text,
+        });
+        // Write to file
+        const arrayBuffer = await speech.arrayBuffer();
+        await fsp.writeFile(filePath, Buffer.from(arrayBuffer));
+        urls.push(publicUrl);
+        dbg('tts-batch: wrote file', { i: idx, url: publicUrl });
+      } catch (err) {
+        console.error('tts-batch: error', err);
+        urls.push(null);
+      }
+      idx++;
+    }
+
+    return res.json({ ok: true, urls });
+  } catch (e) {
+    console.error('tts-batch error', e);
+    return res.status(500).json({ error: 'Failed to generate TTS' });
+  }
 });
 
 // Init OpenAI client

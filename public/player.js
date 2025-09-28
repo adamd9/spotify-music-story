@@ -10,6 +10,62 @@ const DEBUG = (() => {
 })();
 const dbg = (...args) => { if (DEBUG) console.log('[DBG]', ...args); };
 
+// Generate TTS for narration segments and attach URLs onto the doc (timeline or legacy)
+async function generateTTSForDoc(doc) {
+    try {
+        if (!doc) return doc;
+        let texts = [];
+        let targets = [];
+        if (Array.isArray(doc.timeline)) {
+            doc.timeline.forEach((entry) => {
+                if (entry && entry.type === 'narration' && typeof entry.text === 'string' && entry.text.trim().length > 0) {
+                    texts.push({ text: entry.text.trim() });
+                    targets.push(entry);
+                }
+            });
+        } else if (Array.isArray(doc.narration_segments)) {
+            doc.narration_segments.forEach((seg) => {
+                if (seg && typeof seg.text === 'string' && seg.text.trim().length > 0) {
+                    texts.push({ text: seg.text.trim() });
+                    targets.push(seg);
+                }
+            });
+        }
+
+        if (texts.length === 0) {
+            dbg('generateTTSForDoc: no narration segments found');
+            return doc;
+        }
+
+        dbg('generateTTSForDoc: requesting TTS batch', { count: texts.length });
+        const resp = await fetch('/api/tts-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ segments: texts })
+        });
+        if (!resp.ok) {
+            dbg('generateTTSForDoc: tts-batch failed', { status: resp.status });
+            return doc;
+        }
+        const json = await resp.json();
+        const urls = Array.isArray(json?.urls) ? json.urls : [];
+        dbg('generateTTSForDoc: received urls', { total: urls.length });
+
+        let i = 0;
+        for (const target of targets) {
+            const url = urls[i++] || null;
+            if (url) {
+                target.tts_url = url;
+            }
+        }
+
+        return doc;
+    } catch (e) {
+        console.error('generateTTSForDoc error', e);
+        return doc; // fall back to mock if TTS fails
+    }
+}
+
 // Player state
 const state = {
     spotifyPlayer: null,
@@ -78,6 +134,7 @@ function buildPlaylistFromDoc(doc) {
                 if (!entry || !entry.type) return;
                 if (entry.type === 'narration') {
                     narrationCount += 1;
+                    const ttsUrl = entry.tts_url || entry.ttsUrl || entry.url || '/audio/voice-of-character-montervillain-expressions-132288.mp3';
                     newPlaylist.push({
                         type: 'mp3',
                         id: `narration-${narrationCount - 1}`,
@@ -85,7 +142,7 @@ function buildPlaylistFromDoc(doc) {
                         artist: 'Narrator',
                         albumArt: DEFAULT_ALBUM_ART,
                         duration: 0,
-                        url: '/audio/voice-of-character-montervillain-expressions-132288.mp3',
+                        url: ttsUrl,
                         narrationText: entry.text || ''
                     });
                 } else if (entry.type === 'song') {
@@ -109,6 +166,7 @@ function buildPlaylistFromDoc(doc) {
                 if (item.type === 'narration') {
                     const seg = doc.narration_segments[item.narration_index];
                     if (!seg) return;
+                    const ttsUrl = seg.tts_url || seg.ttsUrl || seg.url || '/audio/voice-of-character-montervillain-expressions-132288.mp3';
                     newPlaylist.push({
                         type: 'mp3',
                         id: `narration-${item.narration_index}`,
@@ -116,7 +174,7 @@ function buildPlaylistFromDoc(doc) {
                         artist: 'Narrator',
                         albumArt: DEFAULT_ALBUM_ART,
                         duration: 0,
-                        url: '/audio/voice-of-character-montervillain-expressions-132288.mp3',
+                        url: ttsUrl,
                         narrationText: seg.text
                     });
                 } else if (item.type === 'song') {
@@ -881,7 +939,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     if (!docResp.ok) throw new Error(`music-doc failed ${docResp.status}`);
                     const docJson = await docResp.json();
-                    return buildFromDoc(docJson?.data);
+                    const drafted = docJson?.data;
+                    // Generate TTS for narration, then build
+                    const withTTS = await generateTTSForDoc(drafted);
+                    return buildFromDoc(withTTS);
                 }
 
                 // No token: original single-call flow
@@ -892,7 +953,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 if (!resp.ok) throw new Error(`Server error ${resp.status}`);
                 const json = await resp.json();
-                buildFromDoc(json?.data);
+                const drafted = json?.data;
+                const withTTS = await generateTTSForDoc(drafted);
+                buildFromDoc(withTTS);
             } catch (err) {
                 console.error('doc gen failed', err);
                 if (docOutputEl) docOutputEl.textContent = 'Generation failed. Please try again.';
