@@ -11,6 +11,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:8888/callback';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const SERVER_DEBUG = process.env.SERVER_DEBUG === '1' || process.env.DEBUG === '1';
 
 // Middlewares
 app.use(express.json());
@@ -21,7 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Expose selected environment config to the client
 // This serves a tiny JS file that defines window.CLIENT_DEBUG
 app.get('/config.js', (_req, res) => {
-  const clientDebug = process.env.CLIENT_DEBUG || '';
+  const clientDebug = process.env.CLIENT_DEBUG === '1' || process.env.DEBUG === '1' || SERVER_DEBUG;
   res.type('application/javascript').send(
     `// Generated from server env\nwindow.CLIENT_DEBUG = ${JSON.stringify(clientDebug)};\n`
   );
@@ -29,6 +30,21 @@ app.get('/config.js', (_req, res) => {
 
 // Init OpenAI client
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+// Debug logging helpers (avoid leaking secrets)
+function dbg(...args) {
+  if (SERVER_DEBUG) {
+    console.log('[DBG]', ...args);
+  }
+}
+function safeToken(t) {
+  if (!t || typeof t !== 'string') return '';
+  return t.slice(0, 6) + '...' + t.slice(-4);
+}
+function truncate(str, n = 500) {
+  if (typeof str !== 'string') return str;
+  return str.length > n ? str.slice(0, n) + ` ... [${str.length} chars]` : str;
+}
 
 // Generate a random string for state
 const generateRandomString = (length) => {
@@ -138,14 +154,22 @@ app.post('/api/identify-artist', async (req, res) => {
       return res.status(400).json({ error: 'Missing query or accessToken' });
     }
     const url = `https://api.spotify.com/v1/search?type=artist&limit=5&q=${encodeURIComponent(query)}`;
+    dbg('identify-artist: request', { url, accessToken: safeToken(accessToken) });
     const r = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
+    dbg('identify-artist: response status', r.status);
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
+      dbg('identify-artist: error body', truncate(txt));
       return res.status(r.status).json({ error: 'Spotify search failed', details: txt });
     }
     const data = await r.json();
+    dbg('identify-artist: top result', {
+      count: data?.artists?.items?.length || 0,
+      first: data?.artists?.items?.[0]?.name || null,
+      id: data?.artists?.items?.[0]?.id || null
+    });
     const artist = data.artists?.items?.[0] || null;
     return res.json({ ok: true, artist });
   } catch (e) {
@@ -161,12 +185,14 @@ app.post('/api/artist-tracks', async (req, res) => {
     if (!artistId || !accessToken) {
       return res.status(400).json({ error: 'Missing artistId or accessToken' });
     }
+    dbg('artist-tracks: start', { artistId, market, desiredCount, accessToken: safeToken(accessToken) });
 
     // 1) Top tracks
     const topResp = await fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=${market}`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     const topData = topResp.ok ? await topResp.json() : { tracks: [] };
+    dbg('artist-tracks: top-tracks', { ok: topResp.ok, count: (topData.tracks || []).length });
     const tracksMap = new Map();
     const pushTrack = (t) => {
       if (!t || !t.id) return;
@@ -194,6 +220,7 @@ app.post('/api/artist-tracks', async (req, res) => {
       const albumsData = await albumsResp.json();
       const albums = albumsData.items || [];
       if (albums.length === 0) break;
+      dbg('artist-tracks: albums page', { offset, pageCount: albums.length });
 
       for (const album of albums) {
         if (tracksMap.size >= desiredCount) break;
@@ -210,6 +237,7 @@ app.post('/api/artist-tracks', async (req, res) => {
           album: { name: album.name, release_date: album.release_date },
           duration_ms: t.duration_ms
         }));
+        dbg('artist-tracks: album tracks added', { album: album.name, added: (albumTracks.items || []).length, totalUnique: tracksMap.size });
         if (tracksMap.size >= desiredCount) break;
       }
 
@@ -220,6 +248,7 @@ app.post('/api/artist-tracks', async (req, res) => {
     }
 
     const tracks = Array.from(tracksMap.values()).slice(0, desiredCount);
+    dbg('artist-tracks: done', { total: tracks.length });
     return res.json({ ok: true, tracks });
   } catch (e) {
     console.error('artist-tracks error', e);
@@ -298,17 +327,24 @@ app.post('/api/music-doc', async (req, res) => {
 
     const userPrompt = `Topic: ${topic}\n\nGoals:\n- Provide a brief summary.\n- Pick exactly 5 songs that represent the topic narrative.\n- Create narration segments that reference songs and can be placed between songs.\n- Build a single interleaved timeline array mixing narration and songs.\n- If a catalog is provided, select songs only from it and include track_id and track_uri.\n\nIMPORTANT: Return ONLY a single raw JSON object that validates against the provided JSON Schema. Do NOT include any extra commentary or formatting.\n${extra}${catalogNote}`;
 
+    dbg('music-doc: request', {
+      model: 'gpt-5-mini',
+      instructionsPreview: truncate(systemPrompt, 400),
+      inputPreview: truncate(userPrompt, 400),
+      catalogCount: Array.isArray(catalog) ? catalog.length : 0
+    });
     const response = await openai.responses.create({
       model: 'gpt-5-mini',
       reasoning: {
         effort: 'minimal',
-      },      
+      },
       instructions: systemPrompt,
       input: userPrompt
     });
 
     // Extract JSON string and parse
     const text = response.output_text || '';
+    dbg('music-doc: response output_text', truncate(text, 800));
     let data;
     try {
       data = JSON.parse(text);
