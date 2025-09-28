@@ -157,7 +157,7 @@ app.post('/api/identify-artist', async (req, res) => {
 // Fetch an artist's track catalog (combines top tracks + several albums)
 app.post('/api/artist-tracks', async (req, res) => {
   try {
-    const { artistId, accessToken, market = 'US', maxAlbums = 10 } = req.body || {};
+    const { artistId, accessToken, market = 'US', desiredCount = 100 } = req.body || {};
     if (!artistId || !accessToken) {
       return res.status(400).json({ error: 'Missing artistId or accessToken' });
     }
@@ -183,29 +183,44 @@ app.post('/api/artist-tracks', async (req, res) => {
     };
     (topData.tracks || []).forEach(pushTrack);
 
-    // 2) Albums (limited)
-    const albumsResp = await fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&market=${market}&limit=${maxAlbums}`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const albumsData = albumsResp.ok ? await albumsResp.json() : { items: [] };
-    const albums = albumsData.items || [];
-    for (const album of albums) {
-      const albumTracksResp = await fetch(`https://api.spotify.com/v1/albums/${album.id}/tracks?market=${market}&limit=50`, {
+    // 2) Albums + singles + compilations (paginate up to ~100 unique tracks total)
+    let offset = 0;
+    const pageLimit = 50; // Spotify max per page for albums
+    while (tracksMap.size < desiredCount) {
+      const albumsResp = await fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&market=${market}&limit=${pageLimit}&offset=${offset}` , {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
-      if (!albumTracksResp.ok) continue;
-      const albumTracks = await albumTracksResp.json();
-      (albumTracks.items || []).forEach((t) => pushTrack({
-        id: t.id,
-        uri: t.uri,
-        name: t.name,
-        artists: t.artists,
-        album: { name: album.name, release_date: album.release_date },
-        duration_ms: t.duration_ms
-      }));
+      if (!albumsResp.ok) break;
+      const albumsData = await albumsResp.json();
+      const albums = albumsData.items || [];
+      if (albums.length === 0) break;
+
+      for (const album of albums) {
+        if (tracksMap.size >= desiredCount) break;
+        const albumTracksResp = await fetch(`https://api.spotify.com/v1/albums/${album.id}/tracks?market=${market}&limit=50`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (!albumTracksResp.ok) continue;
+        const albumTracks = await albumTracksResp.json();
+        (albumTracks.items || []).forEach((t) => pushTrack({
+          id: t.id,
+          uri: t.uri,
+          name: t.name,
+          artists: t.artists,
+          album: { name: album.name, release_date: album.release_date },
+          duration_ms: t.duration_ms
+        }));
+        if (tracksMap.size >= desiredCount) break;
+      }
+
+      // Next page
+      offset += pageLimit;
+      // Safety: don't go beyond a few pages to limit latency
+      if (offset > 200) break; // up to 200 albums fetched
     }
 
-    return res.json({ ok: true, tracks: Array.from(tracksMap.values()) });
+    const tracks = Array.from(tracksMap.values()).slice(0, desiredCount);
+    return res.json({ ok: true, tracks });
   } catch (e) {
     console.error('artist-tracks error', e);
     return res.status(500).json({ error: 'Failed to fetch artist tracks' });
@@ -223,74 +238,53 @@ app.post('/api/music-doc', async (req, res) => {
       return res.status(400).json({ error: 'Missing required field: topic (string)' });
     }
 
-    // JSON schema for the response
+    // JSON schema for the response (single interleaved timeline)
     const schema = {
       type: 'object',
       additionalProperties: false,
       properties: {
         topic: { type: 'string' },
         summary: { type: 'string' },
-        tracks: {
+        timeline: {
           type: 'array',
-          minItems: 5,
-          maxItems: 5,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              title: { type: 'string' },
-              artist: { type: 'string' },
-              year: { type: 'string' },
-              album: { type: 'string' },
-              // A helpful search string to resolve on Spotify
-              spotify_query: { type: 'string' },
-              // When selecting from provided catalog, include these:
-              track_id: { type: 'string' },
-              track_uri: { type: 'string' }
-            },
-            required: ['title', 'artist', 'spotify_query']
-          }
-        },
-        narration_segments: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              text: { type: 'string' },
-              // Optionally reference one or more track indices that this segment discusses
-              references: {
-                type: 'array',
-                items: { type: 'integer', minimum: 0, maximum: 4 }
-              }
-            },
-            required: ['text']
-          }
-        },
-        // Interspersed flow mixing narration and songs, by index
-        structure: {
-          type: 'array',
+          minItems: 6,
           items: {
             type: 'object',
             additionalProperties: false,
             properties: {
               type: { type: 'string', enum: ['narration', 'song'] },
-              narration_index: { type: 'integer', minimum: 0 },
-              track_index: { type: 'integer', minimum: 0, maximum: 4 }
+              // narration item
+              text: { type: 'string' },
+              // song item
+              title: { type: 'string' },
+              artist: { type: 'string' },
+              album: { type: 'string' },
+              year: { type: 'string' },
+              spotify_query: { type: 'string' },
+              track_id: { type: 'string' },
+              track_uri: { type: 'string' }
             },
             required: ['type']
           }
         }
       },
-      required: ['topic', 'summary', 'tracks', 'narration_segments', 'structure']
+      required: ['topic', 'summary', 'timeline']
     };
 
+    // Embed the JSON Schema directly into the prompt so the model returns strict JSON
+    const schemaStr = JSON.stringify(schema, null, 2);
     const systemPrompt = [
       'You are a music documentarian AI. Given a band or music topic, produce a concise documentary-style outline interspersing narration segments and exactly 5 notable songs.',
-      'Return JSON only, conforming to the provided schema. Each song should be suitable to search on Spotify via a helpful spotify_query string such as "Song Title artist:Band Name".',
-      'Narration should be broken into short, TTS-friendly segments (2-5 sentences each), and reference the songs where relevant.',
-      'If a track catalog is provided by the user, you MUST pick all 5 songs ONLY from that catalog and include the exact track_id and track_uri for those selections.'
-    ].join(' ');
+      'Output REQUIREMENTS:',
+      '- Return ONLY a single JSON object. No prose, no markdown, no backticks.',
+      '- The JSON MUST strictly conform to the following JSON Schema (names and types must match exactly). Use a single interleaved array named "timeline" whose items are narration or song objects:',
+      schemaStr,
+      'Additional rules:',
+      '- Each song should be suitable to search on Spotify via a helpful spotify_query string such as "Song Title artist:Band Name". Prefer including track_id and track_uri if known or when selecting from a provided catalog.',
+      '- Narration should be broken into short, TTS-friendly segments (2-5 sentences each), and reference the songs where relevant.',
+      '- If a track catalog is provided by the user (described in the user input), you MUST pick all 5 songs ONLY from that catalog and include the exact track_id and track_uri for those selections.',
+      '- Ensure the timeline intersperses narration and songs like a music documentary and contains exactly 5 song items.'
+    ].join('\n');
 
     const extra = prompt && typeof prompt === 'string' && prompt.trim().length > 0
       ? `\n\nAdditional instructions from user (apply carefully):\n${prompt.trim()}`
@@ -302,7 +296,7 @@ app.post('/api/music-doc', async (req, res) => {
       catalogNote = `\n\nCandidate track catalog (MUST choose ONLY from these if selecting songs):\n${JSON.stringify(trimmed, null, 2)}`;
     }
 
-    const userPrompt = `Topic: ${topic}\n\nGoals:\n- Provide a brief summary.\n- Pick 5 songs that represent the topic narrative.\n- Create narration segments that reference songs and can be placed between songs.\n- Build an interspersed structure mixing narration and songs.\n- If a catalog is provided, select songs only from it and include track_id and track_uri.\n${extra}${catalogNote}`;
+    const userPrompt = `Topic: ${topic}\n\nGoals:\n- Provide a brief summary.\n- Pick exactly 5 songs that represent the topic narrative.\n- Create narration segments that reference songs and can be placed between songs.\n- Build a single interleaved timeline array mixing narration and songs.\n- If a catalog is provided, select songs only from it and include track_id and track_uri.\n\nIMPORTANT: Return ONLY a single raw JSON object that validates against the provided JSON Schema. Do NOT include any extra commentary or formatting.\n${extra}${catalogNote}`;
 
     const response = await openai.responses.create({
       model: 'gpt-5-mini',

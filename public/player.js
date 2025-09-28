@@ -66,49 +66,79 @@ const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
 </g>\
 </svg>';
 
-// Build playlist from documentary JSON
+// Build playlist from documentary JSON (supports both legacy structure + new timeline)
 function buildPlaylistFromDoc(doc) {
     try {
-        // Validate minimal structure
-        if (!doc || !Array.isArray(doc.structure) || !Array.isArray(doc.tracks) || !Array.isArray(doc.narration_segments)) {
+        const newPlaylist = [];
+
+        if (doc && Array.isArray(doc.timeline)) {
+            // New format: single interleaved timeline array
+            let narrationCount = 0;
+            doc.timeline.forEach((entry) => {
+                if (!entry || !entry.type) return;
+                if (entry.type === 'narration') {
+                    narrationCount += 1;
+                    newPlaylist.push({
+                        type: 'mp3',
+                        id: `narration-${narrationCount - 1}`,
+                        name: `Narration ${narrationCount}`,
+                        artist: 'Narrator',
+                        albumArt: DEFAULT_ALBUM_ART,
+                        duration: 0,
+                        url: '/audio/voice-of-character-montervillain-expressions-132288.mp3',
+                        narrationText: entry.text || ''
+                    });
+                } else if (entry.type === 'song') {
+                    const title = entry.title || '';
+                    const artist = entry.artist || '';
+                    const uri = entry.track_uri || null;
+                    newPlaylist.push({
+                        type: 'spotify',
+                        id: uri || null,
+                        name: title,
+                        artist: artist,
+                        albumArt: '',
+                        duration: 0,
+                        spotifyQuery: entry.spotify_query || `${title} artist:${artist}`
+                    });
+                }
+            });
+        } else if (doc && Array.isArray(doc.structure) && Array.isArray(doc.tracks) && Array.isArray(doc.narration_segments)) {
+            // Legacy format fallback
+            doc.structure.forEach((item) => {
+                if (item.type === 'narration') {
+                    const seg = doc.narration_segments[item.narration_index];
+                    if (!seg) return;
+                    newPlaylist.push({
+                        type: 'mp3',
+                        id: `narration-${item.narration_index}`,
+                        name: `Narration ${item.narration_index + 1}`,
+                        artist: 'Narrator',
+                        albumArt: DEFAULT_ALBUM_ART,
+                        duration: 0,
+                        url: '/audio/voice-of-character-montervillain-expressions-132288.mp3',
+                        narrationText: seg.text
+                    });
+                } else if (item.type === 'song') {
+                    const tr = doc.tracks[item.track_index];
+                    if (!tr) return;
+                    const searchName = tr.title || '';
+                    const searchArtist = tr.artist || '';
+                    const trackUri = tr.track_uri || null;
+                    newPlaylist.push({
+                        type: 'spotify',
+                        id: trackUri || null,
+                        name: searchName,
+                        artist: searchArtist,
+                        albumArt: '',
+                        duration: 0,
+                        spotifyQuery: tr.spotify_query || `${searchName} artist:${searchArtist}`
+                    });
+                }
+            });
+        } else {
             throw new Error('Invalid documentary structure');
         }
-
-        const newPlaylist = [];
-        doc.structure.forEach((item) => {
-            if (item.type === 'narration') {
-                const seg = doc.narration_segments[item.narration_index];
-                if (!seg) return;
-                // Mock TTS mp3 for now: reuse a bundled mp3 file; in future, generate one mp3 per segment
-                newPlaylist.push({
-                    type: 'mp3',
-                    id: `narration-${item.narration_index}`,
-                    name: `Narration ${item.narration_index + 1}`,
-                    artist: 'Narrator',
-                    albumArt: DEFAULT_ALBUM_ART,
-                    duration: 0,
-                    url: '/audio/voice-of-character-montervillain-expressions-132288.mp3',
-                    // Keep raw text for future real TTS pipeline
-                    narrationText: seg.text
-                });
-            } else if (item.type === 'song') {
-                const tr = doc.tracks[item.track_index];
-                if (!tr) return;
-                // Use spotify_query first if provided, fall back to title + artist
-                const searchName = tr.title || '';
-                const searchArtist = tr.artist || '';
-                const trackUri = tr.track_uri || null; // if provided by catalog-guided generation
-                newPlaylist.push({
-                    type: 'spotify',
-                    id: trackUri || null, // if URI present, play directly; else resolve by search
-                    name: searchName,
-                    artist: searchArtist,
-                    albumArt: '',
-                    duration: 0,
-                    spotifyQuery: tr.spotify_query || `${searchName} artist:${searchArtist}`
-                });
-            }
-        });
 
         if (newPlaylist.length === 0) throw new Error('Empty generated playlist');
 
@@ -837,7 +867,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const catResp = await fetch('/api/artist-tracks', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ artistId: artist.id, accessToken: state.accessToken })
+                        body: JSON.stringify({ artistId: artist.id, accessToken: state.accessToken, desiredCount: 100 })
                     });
                     if (!catResp.ok) throw new Error(`artist-tracks failed ${catResp.status}`);
                     const catJson = await catResp.json();
