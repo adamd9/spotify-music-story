@@ -46,15 +46,6 @@
                 </div>
             </div>
 
-            <div class="doc-output" style="margin-top: 12px;">
-                <div id="doc-status" class="note">Idle.</div>
-                <details id="doc-raw" class="hidden" style="margin-top:8px;">
-                    <summary>Show generated JSON</summary>
-                    <pre id="doc-output" style="max-height: 240px; overflow:auto; background:#111; color:#ddd; padding:8px; border-radius:4px;"></pre>
-                </details>
-                <div id="save-status" style="margin-top:8px; font-size: 0.9rem; color:#9ad; word-break: break-all;"></div>
-            </div>
-            <p class="note">You're logged in. The generator will identify the artist, pull their catalog, and build an interspersed narration + 5-song playlist with actual track URIs.</p>
         </div>
 
         <div class="player-wrapper">
@@ -83,9 +74,6 @@
                 <button id="next" class="btn-control" title="Next">⏭</button>
             </div>
 
-            <div class="player-actions">
-                <button id="share-btn" class="btn btn-secondary">Share current</button>
-            </div>
 
             <div class="volume-control">
                 <span>🔈</span>
@@ -94,10 +82,27 @@
             </div>
 
             <div class="playlist">
-                <h3>Playlist</h3>
+                <div class="playlist-header">
+                    <h3>Playlist</h3>
+                    <button id="share-btn" class="btn btn-secondary">Share current</button>
+                </div>
                 <ul id="playlist"></ul>
             </div>
         </div>
+
+        <div class="bottom-info player-wrapper" style="margin-top: 12px;">
+            <div class="doc-output">
+                <div id="doc-status" class="note">Idle.</div>
+                <details id="doc-raw" class="hidden" style="margin-top:8px;">
+                    <summary>Show generated JSON</summary>
+                    <pre id="doc-output" style="max-height: 240px; overflow:auto; background:#111; color:#ddd; padding:8px; border-radius:4px;"></pre>
+                </details>
+                <div id="save-status" style="margin-top:8px; font-size: 0.9rem; color:#9ad; word-break: break-all;"></div>
+            </div>
+            <p class="note" style="margin-top:10px;">You're logged in. The generator will identify the artist, pull their catalog, and build an interspersed narration + 5-song playlist with actual track URIs.</p>
+        </div>
+
+        <footer class="site-footer player-wrapper">© 2025 Adam Dinneen</footer>
 
         <div id="error" class="hidden">
             <p>An error occurred. Please try again.</p>

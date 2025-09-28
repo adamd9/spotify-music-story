@@ -1,0 +1,13 @@
+Topic: {{TOPIC}}
+
+Goals:
+- Provide a short, human-friendly playlist title and place it in the 'title' field.
+- Provide a brief summary.
+- Pick exactly 5 songs that represent the topic narrative.
+- Create narration segments that reference songs and can be placed between songs.
+- Build a single interleaved timeline array mixing narration and songs.
+- If a catalog is provided, select songs only from it and include track_id and track_uri.
+
+{{EXTRA}}
+
+{{CATALOG_NOTE}}
