@@ -14,6 +14,20 @@
             <p>Listen to your favorite Spotify tracks mixed with custom audio</p>
         </header>
 
+        <div id="doc-gen" class="section">
+            <h2>Create a Music Documentary</h2>
+            <p>Enter a band or music topic. The AI will return a short history interspersed with 5 songs.</p>
+            <div class="doc-form">
+                <input type="text" id="doc-topic" placeholder="e.g. The Beatles early years" style="width: 100%; padding: 8px;">
+                <textarea id="doc-prompt" placeholder="Optional: add extra instructions (tone, eras to focus, regions, etc.)" style="width: 100%; padding: 8px; margin-top: 8px; min-height: 80px;"></textarea>
+                <button id="generate-doc" class="btn btn-secondary" style="margin-top:8px;">Generate Outline</button>
+            </div>
+            <div class="doc-output" style="margin-top: 12px;">
+                <pre id="doc-output" style="max-height: 220px; overflow:auto; background:#111; color:#ddd; padding:8px; border-radius:4px;"></pre>
+            </div>
+            <p class="note">You're logged in. The generator will identify the artist, pull their catalog, and build an interspersed narration + 5-song playlist with actual track URIs.</p>
+        </div>
+
         <div id="player">
             <div class="now-playing">
                 <img id="album-art" src="" alt="Album Art" class="album-art">
@@ -57,6 +71,7 @@
     </div>
 
     <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script src="/config.js"></script>
     <script src="player.js"></script>
 </body>
 </html>

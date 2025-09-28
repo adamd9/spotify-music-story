@@ -8,6 +8,44 @@
     --error-color: #E22134;
 }
 
+/* Desktop layout: place now-playing and controls on the same row */
+@media (min-width: 769px) {
+    /* Use grid to position major sections */
+    #player {
+        display: grid;
+        grid-template-columns: 1fr auto; /* now-playing grows, controls auto width */
+        grid-template-areas:
+            "nowplaying controls"
+            "nowplaying volume"
+            "playlist   playlist";
+        column-gap: 24px;
+        row-gap: 16px;
+    }
+
+    .now-playing {
+        grid-area: nowplaying;
+        margin-bottom: 0; /* remove extra spacing when side-by-side */
+    }
+
+    .controls {
+        grid-area: controls;
+        justify-content: flex-start; /* align buttons to the left in the right column */
+        margin: 0; /* remove vertical margins in grid */
+        align-self: center; /* vertically center relative to now playing */
+    }
+
+    .volume-control {
+        grid-area: volume;
+        justify-content: flex-start;
+        margin: 0; /* tighten spacing when placed under controls */
+        align-self: start;
+    }
+
+    .playlist {
+        grid-area: playlist;
+    }
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -197,6 +235,7 @@ header p {
     width: 150px;
     margin: 0 10px;
     -webkit-appearance: none;
+    appearance: none;
     height: 4px;
     border-radius: 2px;
     background: #404040;
@@ -205,6 +244,7 @@ header p {
 
 .volume-control input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
+    appearance: none;
     width: 14px;
     height: 14px;
     border-radius: 50%;

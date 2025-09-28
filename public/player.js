@@ -1,6 +1,12 @@
-// Debug toggle via URL: add ?debug=1 to enable verbose logging
+// Debug toggle via env-configured flag injected by the server at /config.js
+// Set CLIENT_DEBUG=1 in your server env to enable verbose logging in the client.
 const DEBUG = (() => {
-    try { return new URLSearchParams(window.location.search).get('debug') === '1'; } catch { return false; }
+    try {
+        const flag = (typeof window !== 'undefined') ? window.CLIENT_DEBUG : undefined;
+        return flag === '1' || flag === 1 || flag === true;
+    } catch {
+        return false;
+    }
 })();
 const dbg = (...args) => { if (DEBUG) console.log('[DBG]', ...args); };
 
@@ -43,6 +49,12 @@ const playlistElement = document.getElementById('playlist');
 const errorElement = document.getElementById('error');
 const localBadgeElement = document.getElementById('local-badge');
 
+// Documentary generation UI elements (index page)
+const docTopicInput = document.getElementById('doc-topic');
+const generateDocBtn = document.getElementById('generate-doc');
+const docOutputEl = document.getElementById('doc-output');
+const docPromptEl = document.getElementById('doc-prompt');
+
 // Built-in default album art (inline SVG, dark gray square with music note)
 const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">\
@@ -53,6 +65,71 @@ const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
 <path d="M190 80v100h-10V100l-60 15v65h-10V105l80-20z"/>\
 </g>\
 </svg>';
+
+// Build playlist from documentary JSON
+function buildPlaylistFromDoc(doc) {
+    try {
+        // Validate minimal structure
+        if (!doc || !Array.isArray(doc.structure) || !Array.isArray(doc.tracks) || !Array.isArray(doc.narration_segments)) {
+            throw new Error('Invalid documentary structure');
+        }
+
+        const newPlaylist = [];
+        doc.structure.forEach((item) => {
+            if (item.type === 'narration') {
+                const seg = doc.narration_segments[item.narration_index];
+                if (!seg) return;
+                // Mock TTS mp3 for now: reuse a bundled mp3 file; in future, generate one mp3 per segment
+                newPlaylist.push({
+                    type: 'mp3',
+                    id: `narration-${item.narration_index}`,
+                    name: `Narration ${item.narration_index + 1}`,
+                    artist: 'Narrator',
+                    albumArt: DEFAULT_ALBUM_ART,
+                    duration: 0,
+                    url: '/audio/voice-of-character-montervillain-expressions-132288.mp3',
+                    // Keep raw text for future real TTS pipeline
+                    narrationText: seg.text
+                });
+            } else if (item.type === 'song') {
+                const tr = doc.tracks[item.track_index];
+                if (!tr) return;
+                // Use spotify_query first if provided, fall back to title + artist
+                const searchName = tr.title || '';
+                const searchArtist = tr.artist || '';
+                const trackUri = tr.track_uri || null; // if provided by catalog-guided generation
+                newPlaylist.push({
+                    type: 'spotify',
+                    id: trackUri || null, // if URI present, play directly; else resolve by search
+                    name: searchName,
+                    artist: searchArtist,
+                    albumArt: '',
+                    duration: 0,
+                    spotifyQuery: tr.spotify_query || `${searchName} artist:${searchArtist}`
+                });
+            }
+        });
+
+        if (newPlaylist.length === 0) throw new Error('Empty generated playlist');
+
+        state.playlist = newPlaylist;
+        state.currentTrackIndex = 0;
+        state.currentTrack = state.playlist[0];
+        state.isSpotifyTrack = state.currentTrack.type === 'spotify';
+        renderPlaylist();
+        updateNowPlaying({
+            name: state.currentTrack.name,
+            artist: state.currentTrack.artist,
+            albumArt: state.currentTrack.albumArt,
+            duration: state.currentTrack.duration,
+            position: 0,
+            isPlaying: false
+        });
+    } catch (e) {
+        console.error('Failed to build playlist from doc:', e);
+        showError('Failed to build playlist from generated outline');
+    }
+}
 
 // Initialize the player when the window loads
 window.onSpotifyWebPlaybackSDKReady = () => {
@@ -370,7 +447,8 @@ async function playSpotifyTrack(track) {
         // First, stop any currently playing MP3
         if (state.audioSource) {
             dbg('stopping local audio before Spotify');
-            state.audioSource.stop();
+            try { state.audioSource.onended = null; } catch (_) {}
+            try { state.audioSource.stop(); } catch (_) {}
             state.audioSource = null;
         }
         // Mark source as Spotify
@@ -380,7 +458,10 @@ async function playSpotifyTrack(track) {
         let trackUri = track.id && track.id.startsWith('spotify:track:') ? track.id : null;
         if (!trackUri) {
             dbg('searching Spotify', { name: track.name, artist: track.artist });
-            const q = encodeURIComponent(`${track.name} artist:${track.artist}`);
+            const queryStr = track.spotifyQuery && track.spotifyQuery.trim()
+                ? track.spotifyQuery
+                : `${track.name} artist:${track.artist}`;
+            const q = encodeURIComponent(queryStr);
             const searchResp = await fetch(`https://api.spotify.com/v1/search?type=track&limit=1&q=${q}`, {
                 headers: { 'Authorization': `Bearer ${state.accessToken}` }
             });
@@ -444,7 +525,8 @@ async function playLocalMP3(track) {
         // Stop any currently playing audio
         if (state.audioSource) {
             dbg('stopping existing local audio');
-            state.audioSource.stop();
+            try { state.audioSource.onended = null; } catch (_) {}
+            try { state.audioSource.stop(); } catch (_) {}
             state.audioSource = null;
         }
         
@@ -500,7 +582,8 @@ function togglePlayPause() {
         } else if (state.audioSource) {
             // Pause local audio by stopping and tracking elapsed time
             dbg('toggle pause: local MP3');
-            state.audioSource.stop();
+            try { state.audioSource.onended = null; } catch (_) {}
+            try { state.audioSource.stop(); } catch (_) {}
             state.audioSource = null;
             state.audioPauseTime = Date.now();
         }
@@ -532,6 +615,7 @@ function resumeLocalAt(offsetSeconds) {
         .then(ab => state.audioContext.decodeAudioData(ab))
         .then(audioBuffer => {
             if (state.audioSource) {
+                try { state.audioSource.onended = null; } catch (_) {}
                 try { state.audioSource.stop(); } catch (_) {}
                 state.audioSource = null;
             }
@@ -667,8 +751,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // Set up keyboard shortcuts
+    // Set up keyboard shortcuts (ignore when typing in inputs/textareas/contenteditable)
     document.addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+        const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
+        if (isTyping) {
+            return; // don't hijack keys while user is typing
+        }
         switch (e.code) {
             case 'Space':
                 e.preventDefault();
@@ -702,4 +791,82 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
         }
     });
+
+    // Documentary generator (two-stage flow when Spotify token is available)
+    if (generateDocBtn && docTopicInput) {
+        generateDocBtn.addEventListener('click', async () => {
+            const topic = (docTopicInput.value || '').trim();
+            const prompt = (docPromptEl && docPromptEl.value ? docPromptEl.value : '').trim();
+            if (!topic) {
+                if (docOutputEl) docOutputEl.textContent = 'Please enter a topic (e.g., The Beatles)';
+                return;
+            }
+            if (docOutputEl) docOutputEl.textContent = 'Generating...';
+
+            const buildFromDoc = (data) => {
+                if (docOutputEl) docOutputEl.textContent = JSON.stringify(data, null, 2);
+                buildPlaylistFromDoc(data);
+            };
+
+            try {
+                // If we have an access token, try the two-stage: identify artist -> catalog -> LLM with catalog
+                if (state.accessToken) {
+                    // 1) Identify artist
+                    const idResp = await fetch('/api/identify-artist', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: topic, accessToken: state.accessToken })
+                    });
+                    if (!idResp.ok) throw new Error(`identify-artist failed ${idResp.status}`);
+                    const idJson = await idResp.json();
+                    const artist = idJson?.artist;
+                    if (!artist || !artist.id) {
+                        dbg('No artist identified, falling back to single-call generation');
+                        // Fallback to single-shot generation
+                        const resp = await fetch('/api/music-doc', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ topic, prompt })
+                        });
+                        if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+                        const json = await resp.json();
+                        return buildFromDoc(json?.data);
+                    }
+
+                    // 2) Fetch artist catalog
+                    const catResp = await fetch('/api/artist-tracks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ artistId: artist.id, accessToken: state.accessToken })
+                    });
+                    if (!catResp.ok) throw new Error(`artist-tracks failed ${catResp.status}`);
+                    const catJson = await catResp.json();
+                    const catalog = Array.isArray(catJson?.tracks) ? catJson.tracks : [];
+
+                    // 3) Ask LLM to build the documentary using the catalog (expecting track_uri/track_id)
+                    const docResp = await fetch('/api/music-doc', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ topic, prompt, catalog })
+                    });
+                    if (!docResp.ok) throw new Error(`music-doc failed ${docResp.status}`);
+                    const docJson = await docResp.json();
+                    return buildFromDoc(docJson?.data);
+                }
+
+                // No token: original single-call flow
+                const resp = await fetch('/api/music-doc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, prompt })
+                });
+                if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+                const json = await resp.json();
+                buildFromDoc(json?.data);
+            } catch (err) {
+                console.error('doc gen failed', err);
+                if (docOutputEl) docOutputEl.textContent = 'Generation failed. Please try again.';
+            }
+        });
+    }
 });
