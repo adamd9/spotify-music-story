@@ -7,6 +7,7 @@ async function generateMusicDoc({ topic, prompt, catalog }) {
     type: 'object',
     additionalProperties: false,
     properties: {
+      title: { type: 'string' },
       topic: { type: 'string' },
       summary: { type: 'string' },
       timeline: {
@@ -32,7 +33,7 @@ async function generateMusicDoc({ topic, prompt, catalog }) {
         }
       }
     },
-    required: ['topic', 'summary', 'timeline']
+    required: ['title', 'topic', 'summary', 'timeline']
   };
   const schemaStr = JSON.stringify(schema, null, 2);
 
@@ -43,6 +44,7 @@ async function generateMusicDoc({ topic, prompt, catalog }) {
     '- The JSON MUST strictly conform to the following JSON Schema (names and types must match exactly). Use a single interleaved array named "timeline" whose items are narration or song objects:',
     schemaStr,
     'Additional rules:',
+    '- Include a short, human-friendly title string suitable as a playlist title in the `title` field.',
     '- Each song should be suitable to search on Spotify via a helpful spotify_query string such as "Song Title artist:Band Name". Prefer including track_id and track_uri if known or when selecting from a provided catalog.',
     '- Narration should be broken into short, TTS-friendly segments (2-5 sentences each), and reference the songs where relevant.',
     '- If a track catalog is provided by the user (described in the user input), you MUST pick all 5 songs ONLY from that catalog and include the exact track_id and track_uri for those selections.',
@@ -58,7 +60,7 @@ async function generateMusicDoc({ topic, prompt, catalog }) {
     catalogNote = `\n\nCandidate track catalog (MUST choose ONLY from these if selecting songs):\n${JSON.stringify(trimmed, null, 2)}`;
   }
 
-  const userPrompt = `Topic: ${topic}\n\nGoals:\n- Provide a brief summary.\n- Pick exactly 5 songs that represent the topic narrative.\n- Create narration segments that reference songs and can be placed between songs.\n- Build a single interleaved timeline array mixing narration and songs.\n- If a catalog is provided, select songs only from it and include track_id and track_uri.\n\nIMPORTANT: Return ONLY a single raw JSON object that validates against the provided JSON Schema. Do NOT include any extra commentary or formatting.\n${extra}${catalogNote}`;
+  const userPrompt = `Topic: ${topic}\n\nGoals:\n- Provide a short, human-friendly playlist title and place it in the 'title' field.\n- Provide a brief summary.\n- Pick exactly 5 songs that represent the topic narrative.\n- Create narration segments that reference songs and can be placed between songs.\n- Build a single interleaved timeline array mixing narration and songs.\n- If a catalog is provided, select songs only from it and include track_id and track_uri.\n\nIMPORTANT: Return ONLY a single raw JSON object that validates against the provided JSON Schema. Do NOT include any extra commentary or formatting.\n${extra}${catalogNote}`;
 
   dbg('music-doc: request', {
     model: 'gpt-5-mini',

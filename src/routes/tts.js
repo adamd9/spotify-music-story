@@ -14,7 +14,14 @@ router.post('/api/tts-batch', async (req, res) => {
       return res.status(400).json({ error: 'segments must be a non-empty array of { text }' });
     }
     await fsp.mkdir(config.paths.ttsOutputDir, { recursive: true });
-    dbg('tts-batch: start', { count: segments.length, model: config.openai.ttsModel, voice: config.openai.ttsVoice, outDir: config.paths.ttsOutputDir });
+    dbg('tts-batch: start', { count: segments.length, model: config.openai.ttsModel, voice: config.openai.ttsVoice, outDir: config.paths.ttsOutputDir, mock: !!config.features?.mockTts });
+
+    // Mock mode: return a known local MP3 for each segment (no OpenAI call)
+    if (config.features && config.features.mockTts) {
+      const placeholder = '/audio/voice-of-character-montervillain-expressions-132288.mp3';
+      const urls = segments.map(() => placeholder);
+      return res.json({ ok: true, urls, mock: true });
+    }
 
     const urls = [];
     let idx = 0;

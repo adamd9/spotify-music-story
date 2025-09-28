@@ -6,6 +6,8 @@
     <title>Spotify MP3 Mix Player</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <meta name="theme-color" content="#111111">
 </head>
 <body>
     <div class="container">
@@ -21,9 +23,26 @@
                 <input type="text" id="doc-topic" placeholder="e.g. The Beatles early years" style="width: 100%; padding: 8px;">
                 <textarea id="doc-prompt" placeholder="Optional: add extra instructions (tone, eras to focus, regions, etc.)" style="width: 100%; padding: 8px; margin-top: 8px; min-height: 80px;"></textarea>
                 <button id="generate-doc" class="btn btn-secondary" style="margin-top:8px;">Generate Outline</button>
+                <div id="doc-spinner" class="spinner hidden" style="margin-top:8px;">
+                    <span class="ring"></span>
+                    <span>Generating outline…</span>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+                    <input type="text" id="load-id-input" placeholder="Enter playlist ID to load" style="flex:1; min-width:240px; padding:8px;">
+                    <button id="load-id-btn" class="btn">Load by ID</button>
+                    <button id="share-btn" class="btn btn-secondary">Share</button>
+                </div>
+
+        <div id="my-playlists" class="section">
+            <h2>My Playlists</h2>
+            <p>Saved documentary playlists for your Spotify account.</p>
+            <ul id="my-playlists-list" class="playlist-list"></ul>
+            <div id="my-playlists-empty" class="note">No saved playlists yet.</div>
+        </div>
             </div>
             <div class="doc-output" style="margin-top: 12px;">
                 <pre id="doc-output" style="max-height: 220px; overflow:auto; background:#111; color:#ddd; padding:8px; border-radius:4px;"></pre>
+                <div id="save-status" style="margin-top:8px; font-size: 0.9rem; color:#9ad; word-break: break-all;"></div>
             </div>
             <p class="note">You're logged in. The generator will identify the artist, pull their catalog, and build an interspersed narration + 5-song playlist with actual track URIs.</p>
         </div>

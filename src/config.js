@@ -16,6 +16,9 @@ const config = {
     ttsModel: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
     ttsVoice: process.env.OPENAI_TTS_VOICE || 'alloy',
   },
+  features: {
+    mockTts: process.env.MOCK_TTS === '1',
+  },
   paths: {
     publicDir: path.join(__dirname, '..', 'public'),
     ttsOutputDir: process.env.TTS_OUTPUT_DIR || path.join(__dirname, '..', 'public', 'tts')

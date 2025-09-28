@@ -17,6 +17,8 @@ const SERVER_DEBUG = process.env.SERVER_DEBUG === '1' || process.env.DEBUG === '
 const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
 const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'alloy';
 const TTS_OUTPUT_DIR = process.env.TTS_OUTPUT_DIR || path.join(__dirname, 'public', 'tts');
+const PLAYLIST_DATA_DIR = path.join(__dirname, 'data', 'playlists');
+const MOCK_TTS = process.env.MOCK_TTS === '1';
 
 // Middlewares
 app.use(express.json());
@@ -33,6 +35,26 @@ app.get('/config.js', (_req, res) => {
   );
 });
 
+// Ensure data directories
+fsp.mkdir(TTS_OUTPUT_DIR, { recursive: true }).catch(() => {});
+fsp.mkdir(PLAYLIST_DATA_DIR, { recursive: true }).catch(() => {});
+
+// Simple helpers for playlist persistence
+function randId(len = 12) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+async function writeJson(filePath, obj) {
+  const data = JSON.stringify(obj, null, 2);
+  await fsp.writeFile(filePath, data, 'utf8');
+}
+async function readJson(filePath) {
+  const buf = await fsp.readFile(filePath, 'utf8');
+  return JSON.parse(buf);
+}
+
 // Generate TTS MP3s for an array of narration texts; returns array of URLs
 app.post('/api/tts-batch', async (req, res) => {
   try {
@@ -41,7 +63,14 @@ app.post('/api/tts-batch', async (req, res) => {
       return res.status(400).json({ error: 'segments must be a non-empty array of { text }' });
     }
     await fsp.mkdir(TTS_OUTPUT_DIR, { recursive: true });
-    dbg('tts-batch: start', { count: segments.length, model: OPENAI_TTS_MODEL, voice: OPENAI_TTS_VOICE, outDir: TTS_OUTPUT_DIR });
+    dbg('tts-batch: start', { count: segments.length, model: OPENAI_TTS_MODEL, voice: OPENAI_TTS_VOICE, outDir: TTS_OUTPUT_DIR, mock: MOCK_TTS });
+
+    // Mock mode: return a known local MP3 for each segment (no OpenAI call)
+    if (MOCK_TTS) {
+      const placeholder = '/audio/voice-of-character-montervillain-expressions-132288.mp3';
+      const urls = segments.map(() => placeholder);
+      return res.json({ ok: true, urls, mock: true });
+    }
 
     const urls = [];
     let idx = 0;
@@ -418,6 +447,80 @@ app.post('/api/music-doc', async (req, res) => {
   } catch (err) {
     console.error('music-doc error', err);
     return res.status(500).json({ error: 'Failed to generate music documentary' });
+  }
+});
+
+// Create a saved playlist record
+app.post('/api/playlists', async (req, res) => {
+  try {
+    const { ownerId = 'anonymous', title = 'Music history', topic = '', summary = '', timeline } = req.body || {};
+    if (!Array.isArray(timeline) || timeline.length === 0) {
+      return res.status(400).json({ error: 'timeline is required and must be a non-empty array' });
+    }
+    const id = randId(12);
+    const createdAt = new Date().toISOString();
+    const record = { id, ownerId, title, topic, summary, timeline, createdAt };
+    const filePath = path.join(PLAYLIST_DATA_DIR, `${id}.json`);
+    await writeJson(filePath, record);
+    return res.json({ ok: true, playlist: record });
+  } catch (e) {
+    console.error('create playlist error', e);
+    return res.status(500).json({ error: 'Failed to create playlist' });
+  }
+});
+
+// Get a playlist by ID
+app.get('/api/playlists/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const filePath = path.join(PLAYLIST_DATA_DIR, `${id}.json`);
+    const record = await readJson(filePath).catch(() => null);
+    if (!record) return res.status(404).json({ error: 'Not found' });
+    return res.json({ ok: true, playlist: record });
+  } catch (e) {
+    console.error('get playlist error', e);
+    return res.status(500).json({ error: 'Failed to read playlist' });
+  }
+});
+
+// Update a playlist by ID (partial)
+app.patch('/api/playlists/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const filePath = path.join(PLAYLIST_DATA_DIR, `${id}.json`);
+    const existing = await readJson(filePath).catch(() => null);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const allowed = ['title', 'topic', 'summary', 'timeline'];
+    for (const k of allowed) {
+      if (k in req.body) existing[k] = req.body[k];
+    }
+    existing.updatedAt = new Date().toISOString();
+    await writeJson(filePath, existing);
+    return res.json({ ok: true, playlist: existing });
+  } catch (e) {
+    console.error('patch playlist error', e);
+    return res.status(500).json({ error: 'Failed to update playlist' });
+  }
+});
+
+// List playlists for a user
+app.get('/api/users/:ownerId/playlists', async (req, res) => {
+  try {
+    const { ownerId } = req.params;
+    const files = await fsp.readdir(PLAYLIST_DATA_DIR).catch(() => []);
+    const out = [];
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      const rec = await readJson(path.join(PLAYLIST_DATA_DIR, f)).catch(() => null);
+      if (rec && rec.ownerId === ownerId) {
+        out.push({ id: rec.id, ownerId: rec.ownerId, title: rec.title, topic: rec.topic, createdAt: rec.createdAt, updatedAt: rec.updatedAt });
+      }
+    }
+    out.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+    return res.json({ ok: true, playlists: out });
+  } catch (e) {
+    console.error('list playlists error', e);
+    return res.status(500).json({ error: 'Failed to list playlists' });
   }
 });
 

@@ -425,3 +425,30 @@ header p {
     border-radius: 10px;
     z-index: 10;
 }
+
+/* Inline spinner for doc generation */
+.spinner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.spinner.hidden {
+    display: none !important;
+}
+
+.spinner .ring {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--primary-color);
+    border-top-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

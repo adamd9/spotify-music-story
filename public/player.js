@@ -8,7 +8,111 @@ const DEBUG = (() => {
         return false;
     }
 })();
+
+// Fetch Spotify user id for persistence (top-level, used across features)
+async function fetchSpotifyUserId() {
+    try {
+        if (!state.accessToken) return null;
+        const r = await fetch('https://api.spotify.com/v1/me', {
+            headers: { 'Authorization': `Bearer ${state.accessToken}` }
+        });
+        if (!r.ok) return null;
+        const me = await r.json();
+        return me?.id || null;
+    } catch (e) {
+        dbg('fetchSpotifyUserId error', e);
+        return null;
+    }
+}
+
 const dbg = (...args) => { if (DEBUG) console.log('[DBG]', ...args); };
+
+// My Playlists rendering and actions
+async function refreshMyPlaylists() {
+    const ownerId = await fetchSpotifyUserId();
+    if (!ownerId) {
+        if (myPlaylistsEmpty) myPlaylistsEmpty.textContent = 'Login required to view saved playlists.';
+        return;
+    }
+    try {
+        const r = await fetch(`/api/users/${encodeURIComponent(ownerId)}/playlists`);
+        if (!r.ok) throw new Error('Fetch failed');
+        const json = await r.json();
+        const list = Array.isArray(json?.playlists) ? json.playlists : [];
+        if (myPlaylistsList) myPlaylistsList.innerHTML = '';
+        if (!list.length) {
+            if (myPlaylistsEmpty) myPlaylistsEmpty.classList.remove('hidden');
+            return;
+        }
+        if (myPlaylistsEmpty) myPlaylistsEmpty.classList.add('hidden');
+        list.forEach((rec, idx) => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <div class="saved-item">
+                    <div class="saved-title">${rec.title || '(untitled)'} <span class="saved-meta">${rec.topic ? '(' + rec.topic + ')' : ''}</span></div>
+                    <div class="saved-actions">
+                        <button class="btn btn-secondary" data-id="${rec.id}">Load</button>
+                        <button class="btn" data-share="${rec.id}">Share</button>
+                    </div>
+                </div>`;
+            myPlaylistsList.appendChild(li);
+        });
+        // Attach events
+        myPlaylistsList.querySelectorAll('button[data-id]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.getAttribute('data-id');
+                loadIdInput.value = id;
+                loadIdBtn.click();
+            });
+        });
+        myPlaylistsList.querySelectorAll('button[data-share]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.getAttribute('data-share');
+                const url = `${window.location.origin}/player.html?playlistId=${id}`;
+                try {
+                    await navigator.clipboard.writeText(url);
+                    if (saveStatusEl) saveStatusEl.textContent = `Share link copied to clipboard: ${url}`;
+                } catch {
+                    if (saveStatusEl) saveStatusEl.textContent = `Share link: ${url}`;
+                }
+            });
+        });
+    } catch (e) {
+        console.error('refreshMyPlaylists error', e);
+        if (myPlaylistsEmpty) {
+            myPlaylistsEmpty.classList.remove('hidden');
+            myPlaylistsEmpty.textContent = 'Failed to load playlists.';
+        }
+    }
+}
+
+// (moved) We attach listeners and refresh after DOM elements are defined below
+
+// Save generated playlist record to server for sharing and history
+async function saveGeneratedPlaylist(doc, ownerId) {
+    try {
+        if (!doc || !Array.isArray(doc.timeline)) return null;
+        const body = {
+            ownerId: ownerId || 'anonymous',
+            title: doc.title || (doc.topic ? `Music history: ${doc.topic}` : 'Music history'),
+            topic: doc.topic || '',
+            summary: doc.summary || '',
+            timeline: doc.timeline
+        };
+        const r = await fetch('/api/playlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!r.ok) return null;
+        const json = await r.json();
+        return json?.playlist || null;
+    } catch (e) {
+        console.error('saveGeneratedPlaylist error', e);
+        return null;
+    }
+}
+
 
 // Generate TTS for narration segments and attach URLs onto the doc (timeline or legacy)
 async function generateTTSForDoc(doc) {
@@ -110,6 +214,14 @@ const docTopicInput = document.getElementById('doc-topic');
 const generateDocBtn = document.getElementById('generate-doc');
 const docOutputEl = document.getElementById('doc-output');
 const docPromptEl = document.getElementById('doc-prompt');
+const saveStatusEl = document.getElementById('save-status');
+const loadIdInput = document.getElementById('load-id-input');
+const loadIdBtn = document.getElementById('load-id-btn');
+const shareBtn = document.getElementById('share-btn');
+const myPlaylistsList = document.getElementById('my-playlists-list');
+const myPlaylistsEmpty = document.getElementById('my-playlists-empty');
+const refreshMyPlaylistsBtn = document.getElementById('refresh-my-playlists');
+const docSpinner = document.getElementById('doc-spinner');
 
 // Built-in default album art (inline SVG, dark gray square with music note)
 const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
@@ -261,6 +373,15 @@ async function initPlayer() {
             getOAuthToken: cb => { cb(state.accessToken); },
             volume: state.volume
         });
+
+    // In case the access token arrives via hash after redirect, refresh playlists
+    window.addEventListener('hashchange', () => {
+        const prev = !!state.accessToken;
+        parseHash();
+        if (!prev && state.accessToken) {
+            try { refreshMyPlaylists(); } catch {}
+        }
+    });
 
         // Set up Web Audio API for local MP3 playback
         state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -830,6 +951,10 @@ function showError(message) {
 document.addEventListener('DOMContentLoaded', () => {
     // Check if we have an access token in the URL
     parseHash();
+    // If already authenticated, refresh My Playlists immediately
+    if (state.accessToken) {
+        try { refreshMyPlaylists(); } catch {}
+    }
     
     // Ensure login button works on the index page before auth
     const loginBtn = document.getElementById('login-button');
@@ -881,84 +1006,228 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Documentary generator (two-stage flow when Spotify token is available)
-    if (generateDocBtn && docTopicInput) {
-        generateDocBtn.addEventListener('click', async () => {
-            const topic = (docTopicInput.value || '').trim();
-            const prompt = (docPromptEl && docPromptEl.value ? docPromptEl.value : '').trim();
-            if (!topic) {
-                if (docOutputEl) docOutputEl.textContent = 'Please enter a topic (e.g., The Beatles)';
-                return;
-            }
-            if (docOutputEl) docOutputEl.textContent = 'Generating...';
+    async function handleGenerateDocClick() {
+        // UI: show spinner and disable button
+        try { if (docSpinner) docSpinner.classList.remove('hidden'); } catch {}
+        try { if (generateDocBtn) generateDocBtn.disabled = true; } catch {}
+        const topic = (docTopicInput && docTopicInput.value ? docTopicInput.value : '').trim();
+        const prompt = (docPromptEl && docPromptEl.value ? docPromptEl.value : '').trim();
+        if (!topic) {
+            if (docOutputEl) docOutputEl.textContent = 'Please enter a topic (e.g., The Beatles)';
+            // hide spinner and re-enable
+            try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
+            try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
+            return;
+        }
+        if (docOutputEl) docOutputEl.textContent = 'Generating...';
 
-            const buildFromDoc = (data) => {
-                if (docOutputEl) docOutputEl.textContent = JSON.stringify(data, null, 2);
-                buildPlaylistFromDoc(data);
-            };
+        const buildFromDoc = (data) => {
+            if (docOutputEl) docOutputEl.textContent = JSON.stringify(data, null, 2);
+            buildPlaylistFromDoc(data);
+        };
 
-            try {
-                // If we have an access token, try the two-stage: identify artist -> catalog -> LLM with catalog
-                if (state.accessToken) {
-                    // 1) Identify artist
-                    const idResp = await fetch('/api/identify-artist', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query: topic, accessToken: state.accessToken })
-                    });
-                    if (!idResp.ok) throw new Error(`identify-artist failed ${idResp.status}`);
-                    const idJson = await idResp.json();
-                    const artist = idJson?.artist;
-                    if (!artist || !artist.id) {
-                        dbg('No artist identified, falling back to single-call generation');
-                        // Fallback to single-shot generation
-                        const resp = await fetch('/api/music-doc', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ topic, prompt })
-                        });
-                        if (!resp.ok) throw new Error(`Server error ${resp.status}`);
-                        const json = await resp.json();
-                        return buildFromDoc(json?.data);
-                    }
-
-                    // 2) Fetch artist catalog
-                    const catResp = await fetch('/api/artist-tracks', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ artistId: artist.id, accessToken: state.accessToken, desiredCount: 100 })
-                    });
-                    if (!catResp.ok) throw new Error(`artist-tracks failed ${catResp.status}`);
-                    const catJson = await catResp.json();
-                    const catalog = Array.isArray(catJson?.tracks) ? catJson.tracks : [];
-
-                    // 3) Ask LLM to build the documentary using the catalog (expecting track_uri/track_id)
-                    const docResp = await fetch('/api/music-doc', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ topic, prompt, catalog })
-                    });
-                    if (!docResp.ok) throw new Error(`music-doc failed ${docResp.status}`);
-                    const docJson = await docResp.json();
-                    const drafted = docJson?.data;
-                    // Generate TTS for narration, then build
-                    const withTTS = await generateTTSForDoc(drafted);
-                    return buildFromDoc(withTTS);
-                }
-
-                // No token: original single-call flow
-                const resp = await fetch('/api/music-doc', {
+        try {
+            if (state.accessToken) {
+                // 1) Identify artist
+                const idResp = await fetch('/api/identify-artist', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ topic, prompt })
+                    body: JSON.stringify({ query: topic, accessToken: state.accessToken })
                 });
-                if (!resp.ok) throw new Error(`Server error ${resp.status}`);
-                const json = await resp.json();
-                const drafted = json?.data;
+                if (!idResp.ok) throw new Error(`identify-artist failed ${idResp.status}`);
+                const idJson = await idResp.json();
+                const artist = idJson?.artist;
+                if (!artist || !artist.id) {
+                    dbg('No artist identified, falling back to single-call generation');
+                    // Fallback to single-shot generation
+                    const resp = await fetch('/api/music-doc', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ topic, prompt })
+                    });
+                    if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+                    const json = await resp.json();
+                    return buildFromDoc(json?.data);
+                }
+
+                // 2) Fetch artist catalog
+                const catResp = await fetch('/api/artist-tracks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ artistId: artist.id, accessToken: state.accessToken, desiredCount: 100 })
+                });
+                if (!catResp.ok) throw new Error(`artist-tracks failed ${catResp.status}`);
+                const catJson = await catResp.json();
+                const catalog = Array.isArray(catJson?.tracks) ? catJson.tracks : [];
+
+                // 3) Ask LLM to build the documentary using the catalog (expecting track_uri/track_id)
+                const ownerId = await fetchSpotifyUserId();
+                const docResp = await fetch('/api/music-doc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, prompt, catalog, ownerId })
+                });
+                if (!docResp.ok) throw new Error(`music-doc failed ${docResp.status}`);
+                const docJson = await docResp.json();
+                const drafted = docJson?.data;
+                const playlistId = docJson?.playlistId;
+                // Generate TTS for narration, then build
                 const withTTS = await generateTTSForDoc(drafted);
-                buildFromDoc(withTTS);
-            } catch (err) {
-                console.error('doc gen failed', err);
-                if (docOutputEl) docOutputEl.textContent = 'Generation failed. Please try again.';
+                // Finalize persisted record (attach TTS URLs and any final fields)
+                if (playlistId) {
+                    await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            title: withTTS.title || drafted.title,
+                            topic: withTTS.topic || drafted.topic,
+                            summary: withTTS.summary || drafted.summary,
+                            timeline: withTTS.timeline
+                        })
+                    });
+                    if (saveStatusEl) {
+                        const shareUrl = `${window.location.origin}/player.html?playlistId=${playlistId}`;
+                        saveStatusEl.textContent = `Saved as: ${withTTS.title || drafted.title || 'Music history'} — Share ID: ${playlistId} — ${shareUrl}`;
+                    }
+                    // Update My Playlists UI
+                    try { await refreshMyPlaylists(); } catch {}
+                } else {
+                    // Persist new playlist if none was created server-side
+                    const ownerId2 = ownerId || (await fetchSpotifyUserId()) || 'anonymous';
+                    const saved = await saveGeneratedPlaylist(withTTS, ownerId2);
+                    if (saved && saveStatusEl) {
+                        const shareUrl = `${window.location.origin}/player.html?playlistId=${saved.id}`;
+                        saveStatusEl.textContent = `Saved as: ${saved.title || 'Music history'} — Share ID: ${saved.id} — ${shareUrl}`;
+                        try { await refreshMyPlaylists(); } catch {}
+                    }
+                }
+                return buildFromDoc(withTTS);
+            }
+
+            // No token: original single-call flow
+            const ownerId = await fetchSpotifyUserId();
+            const resp = await fetch('/api/music-doc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic, prompt, ownerId })
+            });
+            if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+            const json = await resp.json();
+            const drafted = json?.data;
+            const playlistId = json?.playlistId;
+            const withTTS = await generateTTSForDoc(drafted);
+            if (playlistId) {
+                await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: withTTS.title || drafted.title,
+                        topic: withTTS.topic || drafted.topic,
+                        summary: withTTS.summary || drafted.summary,
+                        timeline: withTTS.timeline
+                    })
+                });
+                if (saveStatusEl) {
+                    const shareUrl = `${window.location.origin}/player.html?playlistId=${playlistId}`;
+                    saveStatusEl.textContent = `Saved as: ${withTTS.title || drafted.title || 'Music history'} — Share ID: ${playlistId} — ${shareUrl}`;
+                }
+                try { await refreshMyPlaylists(); } catch {}
+            } else {
+                // Persist new playlist if none was created server-side
+                const ownerId2 = (await fetchSpotifyUserId()) || 'anonymous';
+                const saved = await saveGeneratedPlaylist(withTTS, ownerId2);
+                if (saved && saveStatusEl) {
+                    const shareUrl = `${window.location.origin}/player.html?playlistId=${saved.id}`;
+                    saveStatusEl.textContent = `Saved as: ${saved.title || 'Music history'} — Share ID: ${saved.id} — ${shareUrl}`;
+                    try { await refreshMyPlaylists(); } catch {}
+                }
+            }
+            buildFromDoc(withTTS);
+        } catch (err) {
+            console.error('doc gen failed', err);
+            if (docOutputEl) docOutputEl.textContent = 'Generation failed. Please try again.';
+        } finally {
+            // UI: hide spinner and enable button
+            try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
+            try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
+        }
+    }
+
+    // Attach direct listener when elements are present
+    if (generateDocBtn) {
+        dbg('Binding click listener for #generate-doc (direct)');
+        generateDocBtn.addEventListener('click', handleGenerateDocClick);
+    } else {
+        dbg('Generate button not found at script parse time');
+    }
+
+    // Fallback: delegated listener in case DOM timing prevented direct binding
+    document.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!t) return;
+        const btn = t.closest ? t.closest('#generate-doc') : null;
+        if (btn) {
+            dbg('Delegated click caught for #generate-doc');
+            handleGenerateDocClick();
+        }
+    });
+
+    // Load by ID
+    if (loadIdBtn && loadIdInput) {
+        loadIdBtn.addEventListener('click', async () => {
+            const id = (loadIdInput.value || '').trim();
+            if (!id) return;
+            try {
+                if (docOutputEl) docOutputEl.textContent = 'Loading playlist...';
+                const r = await fetch(`/api/playlists/${encodeURIComponent(id)}`);
+                if (!r.ok) throw new Error('Not found');
+                const json = await r.json();
+                const rec = json?.playlist;
+                if (!rec) throw new Error('Invalid playlist');
+                if (saveStatusEl) {
+                    const shareUrl = `${window.location.origin}/player.html?playlistId=${rec.id}`;
+                    saveStatusEl.textContent = `Loaded: ${rec.title} — ID: ${rec.id} — ${shareUrl}`;
+                }
+                if (docOutputEl) docOutputEl.textContent = JSON.stringify(rec, null, 2);
+                buildPlaylistFromDoc(rec);
+            } catch (e) {
+                console.error('load by id failed', e);
+                if (docOutputEl) docOutputEl.textContent = 'Load failed. Please check the ID.';
+            }
+        });
+    }
+
+    // Auto-load by playlistId query param
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const pid = params.get('playlistId');
+        if (pid) {
+            if (loadIdInput) loadIdInput.value = pid;
+            if (loadIdBtn) loadIdBtn.click();
+        }
+    } catch {}
+
+    // (removed duplicate My Playlists rendering block)
+
+    // Share button
+    if (shareBtn) {
+        shareBtn.addEventListener('click', async () => {
+            // If we have a recently saved id from save-status text, try to reuse it; otherwise use current loadIdInput
+            const text = saveStatusEl ? saveStatusEl.textContent : '';
+            let id = '';
+            const m = text && text.match(/Share ID:\s*(\w+)/);
+            if (m) id = m[1];
+            if (!id && loadIdInput) id = (loadIdInput.value || '').trim();
+            if (!id) {
+                if (saveStatusEl) saveStatusEl.textContent = 'Nothing to share yet. Generate or load a playlist first.';
+                return;
+            }
+            const url = `${window.location.origin}/player.html?playlistId=${id}`;
+            try {
+                await navigator.clipboard.writeText(url);
+                if (saveStatusEl) saveStatusEl.textContent = `Share link copied to clipboard: ${url}`;
+            } catch {
+                if (saveStatusEl) saveStatusEl.textContent = `Share link: ${url}`;
             }
         });
     }
