@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify MP3 Mix Player</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Spotify MP3 Mix Player</h1>
+            <p>Listen to your favorite Spotify tracks mixed with custom audio</p>
+        </header>
+
+        <div id="login" class="section">
+            <button id="login-button" class="btn btn-primary">Login with Spotify Premium</button>
+            <p class="note">You need a Spotify Premium account to use this player</p>
+        </div>
+
+        <div id="player" class="hidden">
+            <div class="now-playing">
+                <img id="album-art" src="" alt="Album Art" class="album-art">
+                <div class="track-info">
+                    <div class="track-title-row">
+                        <h2 id="track-name">Not Playing</h2>
+                        <span id="local-badge" class="badge badge-local hidden">LOCAL</span>
+                    </div>
+                    <p id="artist-name">-</p>
+                    <div class="progress-container">
+                        <div id="progress-bar" class="progress-bar"></div>
+                    </div>
+                    <div class="time-display">
+                        <span id="current-time">0:00</span>
+                        <span id="duration">0:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="previous" class="btn-control" title="Previous">⏮</button>
+                <button id="play-pause" class="btn-control play" title="Play/Pause">▶</button>
+                <button id="next" class="btn-control" title="Next">⏭</button>
+            </div>
+
+            <div class="volume-control">
+                <span>🔈</span>
+                <input type="range" id="volume" min="0" max="100" value="50">
+                <span>🔊</span>
+            </div>
+
+            <div class="playlist">
+                <h3>Playlist</h3>
+                <ul id="playlist">
+                    <!-- Playlist items will be added here -->
+                </ul>
+            </div>
+        </div>
+
+        <div id="error" class="hidden">
+            <p>An error occurred. Please try again.</p>
+        </div>
+    </div>
+
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script src="player.js"></script>
+</body>
+</html>
