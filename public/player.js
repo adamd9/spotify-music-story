@@ -47,34 +47,22 @@ async function refreshMyPlaylists() {
         if (myPlaylistsEmpty) myPlaylistsEmpty.classList.add('hidden');
         list.forEach((rec, idx) => {
             const li = document.createElement('li');
+            const title = rec.title || '(untitled)';
+            const meta = rec.topic ? `(<span class="saved-meta-topic">${rec.topic}</span>)` : '';
             li.innerHTML = `
                 <div class="saved-item">
-                    <div class="saved-title">${rec.title || '(untitled)'} <span class="saved-meta">${rec.topic ? '(' + rec.topic + ')' : ''}</span></div>
-                    <div class="saved-actions">
-                        <button class="btn btn-secondary" data-id="${rec.id}">Load</button>
-                        <button class="btn" data-share="${rec.id}">Share</button>
-                    </div>
+                    <button class="saved-title as-link" data-id="${rec.id}" title="Load playlist">
+                        ${title} <span class="saved-meta">${meta}</span>
+                    </button>
                 </div>`;
             myPlaylistsList.appendChild(li);
         });
-        // Attach events
-        myPlaylistsList.querySelectorAll('button[data-id]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const id = btn.getAttribute('data-id');
-                loadIdInput.value = id;
-                loadIdBtn.click();
-            });
-        });
-        myPlaylistsList.querySelectorAll('button[data-share]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const id = btn.getAttribute('data-share');
-                const url = `${window.location.origin}/player.html?playlistId=${id}`;
-                try {
-                    await navigator.clipboard.writeText(url);
-                    if (saveStatusEl) saveStatusEl.textContent = `Share link copied to clipboard: ${url}`;
-                } catch {
-                    if (saveStatusEl) saveStatusEl.textContent = `Share link: ${url}`;
-                }
+        // Attach events: click title to load
+        myPlaylistsList.querySelectorAll('.saved-title.as-link[data-id]').forEach(el => {
+            el.addEventListener('click', async () => {
+                const id = el.getAttribute('data-id');
+                if (loadIdInput) loadIdInput.value = id;
+                if (loadIdBtn) loadIdBtn.click();
             });
         });
     } catch (e) {
@@ -228,6 +216,10 @@ const refreshMyPlaylistsBtn = document.getElementById('refresh-my-playlists');
 const docSpinner = document.getElementById('doc-spinner');
 const docStatusEl = document.getElementById('doc-status');
 const docRawDetails = document.getElementById('doc-raw');
+// Import modal elements
+const importOpenBtn = document.getElementById('import-open-btn');
+const importModal = document.getElementById('import-modal');
+const importCancelBtn = document.getElementById('import-cancel-btn');
 
 // Built-in default album art (inline SVG, dark gray square with music note)
 const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
@@ -1204,6 +1196,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load by ID
     if (loadIdBtn && loadIdInput) {
+        // Trigger load on button click
         loadIdBtn.addEventListener('click', async () => {
             const id = (loadIdInput.value || '').trim();
             if (!id) return;
@@ -1215,6 +1208,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const json = await r.json();
                 const pl = json?.playlist;
                 if (!pl || !Array.isArray(pl.timeline)) throw new Error('Invalid playlist data');
+                // Close modal if open
+                try {
+                    const modal = document.getElementById('import-modal');
+                    if (modal && !modal.classList.contains('hidden')) {
+                        modal.classList.add('hidden');
+                        modal.setAttribute('aria-hidden', 'true');
+                    }
+                } catch {}
                 // Show concise status
                 try {
                     const items = Array.isArray(pl.timeline) ? pl.timeline : [];
@@ -1232,6 +1233,13 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {
                 console.error('load by id error', e);
                 if (docStatusEl) docStatusEl.textContent = 'Playlist not found.';
+            }
+        });
+        // Trigger load on Enter key
+        loadIdInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loadIdBtn.click();
             }
         });
     }

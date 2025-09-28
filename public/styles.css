@@ -356,17 +356,19 @@ header p {
 .section {
     background-color: var(--surface-color);
     border-radius: 10px;
-    padding: 16px;
+    padding: 14px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    font-size: 0.95rem;
 }
 
 .section h2 {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+    font-size: 1.1rem;
 }
 
 .section p {
     color: var(--text-secondary);
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 /* Themed compact inputs */
@@ -377,7 +379,7 @@ header p {
     color: var(--text-primary);
     border: 1px solid #2e2e2e;
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 8px 10px;
 }
 
 .section textarea {
@@ -393,8 +395,54 @@ header p {
 }
 
 .section .btn {
-    padding: 10px 16px;
+    padding: 8px 12px;
     border-radius: 8px;
+    font-size: 0.95rem;
+}
+
+/* Secondary button (neutral) */
+.btn.btn-secondary {
+    background-color: #2f2f2f;
+    color: var(--text-primary);
+}
+.btn.btn-secondary:hover {
+    background-color: #3a3a3a;
+}
+
+/* Compact vertical rhythm for form rows */
+.field-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+/* ------------------------------
+   Modal overlay (Import by ID)
+   ------------------------------ */
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal.hidden {
+    display: none !important;
+}
+
+.modal .dialog {
+    background: #1b1b1b;
+    border: 1px solid #2e2e2e;
+    border-radius: 10px;
+    padding: 16px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
 }
 
 /* Utility Classes */
@@ -538,6 +586,21 @@ header p {
     white-space: nowrap;
 }
 
+/* Make saved title appear like a text link button */
+.playlist-list .saved-title.as-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+}
+.playlist-list .saved-title.as-link:hover {
+    color: #9ad;
+}
+
 .playlist-list .saved-meta {
     color: var(--text-secondary);
     font-weight: 500;
@@ -567,6 +630,14 @@ header p {
     background-color: #3a3a3a;
 }
 
+/* Player secondary actions row (e.g., share current) */
+.player-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 8px 0 8px;
+}
+
 /* ------------------------------
    Dashboard 3-column layout
    ------------------------------ */
@@ -584,5 +655,26 @@ header p {
     }
     .dashboard-row .section {
         height: 100%;
+    }
+}
+
+/* New rows: create (full width) then two-column (playlists + import) */
+.dashboard-row-one {
+    display: block;
+    margin-bottom: 16px;
+}
+
+.dashboard-row-two {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
+.dashboard-row-two .dashboard-col { min-width: 0; }
+
+@media (min-width: 768px) {
+    .dashboard-row-two {
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
     }
 }
