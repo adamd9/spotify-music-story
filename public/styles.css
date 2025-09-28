@@ -61,7 +61,7 @@ body {
 }
 
 .container {
-    max-width: 800px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 20px;
 }
@@ -101,6 +101,13 @@ header p {
     border-radius: 10px;
     padding: 25px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Centered, fixed-width player on large screens */
+.player-wrapper {
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
 }
 
 .now-playing {
@@ -345,6 +352,51 @@ header p {
     box-shadow: 0 5px 15px rgba(29, 185, 84, 0.3);
 }
 
+/* Section cards (Create / My Playlists / Import) */
+.section {
+    background-color: var(--surface-color);
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+}
+
+.section h2 {
+    margin-bottom: 8px;
+}
+
+.section p {
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+/* Themed compact inputs */
+.section input[type="text"],
+.section textarea {
+    width: 100%;
+    background: #1b1b1b;
+    color: var(--text-primary);
+    border: 1px solid #2e2e2e;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.section textarea {
+    min-height: 88px;
+    resize: vertical;
+}
+
+.section input[type="text"]:focus,
+.section textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(29,185,84,0.15);
+}
+
+.section .btn {
+    padding: 10px 16px;
+    border-radius: 8px;
+}
+
 /* Utility Classes */
 .hidden {
     display: none !important;
@@ -451,4 +503,86 @@ header p {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* ------------------------------
+   Saved Playlists (single-line)
+   ------------------------------ */
+.playlist-list {
+    list-style: none;
+    margin: 8px 0 0 0;
+    padding: 0;
+}
+
+.playlist-list li {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.playlist-list li:last-child {
+    border-bottom: none;
+}
+
+.playlist-list .saved-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.playlist-list .saved-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.playlist-list .saved-meta {
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-left: 6px;
+    font-size: 0.9rem;
+}
+
+.playlist-list .saved-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.playlist-list .btn {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    border-radius: 6px;
+}
+
+.playlist-list .btn.btn-secondary {
+    background-color: #2f2f2f;
+    color: var(--text-primary);
+}
+
+.playlist-list .btn.btn-secondary:hover {
+    background-color: #3a3a3a;
+}
+
+/* ------------------------------
+   Dashboard 3-column layout
+   ------------------------------ */
+.dashboard-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
+@media (min-width: 1024px) {
+    .dashboard-row {
+        grid-template-columns: 1fr 1fr 1fr;
+        align-items: start;
+        gap: 20px;
+    }
+    .dashboard-row .section {
+        height: 100%;
+    }
 }

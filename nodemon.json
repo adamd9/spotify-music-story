@@ -1,0 +1,9 @@
+{
+  "watch": ["src", "server.js", "public", "data"],
+  "ext": "js,json",
+  "ignore": [
+    "public/tts/**",
+    "public/**/*.mp3",
+    "data/**"
+  ]
+}

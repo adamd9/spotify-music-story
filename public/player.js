@@ -142,6 +142,7 @@ async function generateTTSForDoc(doc) {
         }
 
         dbg('generateTTSForDoc: requesting TTS batch', { count: texts.length });
+        try { if (docStatusEl) docStatusEl.textContent = `Generating narration tracks (${texts.length})…`; } catch {}
         const resp = await fetch('/api/tts-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -149,6 +150,7 @@ async function generateTTSForDoc(doc) {
         });
         if (!resp.ok) {
             dbg('generateTTSForDoc: tts-batch failed', { status: resp.status });
+            try { if (docStatusEl) docStatusEl.textContent = 'Narration generation failed — continuing without TTS.'; } catch {}
             return doc;
         }
         const json = await resp.json();
@@ -163,9 +165,11 @@ async function generateTTSForDoc(doc) {
             }
         }
 
+        try { if (docStatusEl) docStatusEl.textContent = 'Narration tracks ready.'; } catch {}
         return doc;
     } catch (e) {
         console.error('generateTTSForDoc error', e);
+        try { if (docStatusEl) docStatusEl.textContent = 'Narration generation failed — continuing without TTS.'; } catch {}
         return doc; // fall back to mock if TTS fails
     }
 }
@@ -222,6 +226,8 @@ const myPlaylistsList = document.getElementById('my-playlists-list');
 const myPlaylistsEmpty = document.getElementById('my-playlists-empty');
 const refreshMyPlaylistsBtn = document.getElementById('refresh-my-playlists');
 const docSpinner = document.getElementById('doc-spinner');
+const docStatusEl = document.getElementById('doc-status');
+const docRawDetails = document.getElementById('doc-raw');
 
 // Built-in default album art (inline SVG, dark gray square with music note)
 const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
@@ -1010,25 +1016,40 @@ document.addEventListener('DOMContentLoaded', () => {
         // UI: show spinner and disable button
         try { if (docSpinner) docSpinner.classList.remove('hidden'); } catch {}
         try { if (generateDocBtn) generateDocBtn.disabled = true; } catch {}
+        try { if (docStatusEl) docStatusEl.textContent = 'Generating outline…'; } catch {}
+        try { if (docRawDetails) { docRawDetails.classList.add('hidden'); docRawDetails.open = false; } } catch {}
         const topic = (docTopicInput && docTopicInput.value ? docTopicInput.value : '').trim();
         const prompt = (docPromptEl && docPromptEl.value ? docPromptEl.value : '').trim();
         if (!topic) {
-            if (docOutputEl) docOutputEl.textContent = 'Please enter a topic (e.g., The Beatles)';
+            if (docStatusEl) docStatusEl.textContent = 'Please enter a topic (e.g., The Beatles).';
             // hide spinner and re-enable
             try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
             try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
             return;
         }
-        if (docOutputEl) docOutputEl.textContent = 'Generating...';
+        if (docStatusEl) docStatusEl.textContent = 'Generating outline…';
 
         const buildFromDoc = (data) => {
-            if (docOutputEl) docOutputEl.textContent = JSON.stringify(data, null, 2);
+            // Update concise status
+            try {
+                const items = Array.isArray(data?.timeline) ? data.timeline : [];
+                const songs = items.filter(x => x && x.type === 'song').length;
+                const narr = items.filter(x => x && x.type === 'narration').length;
+                const title = data?.title || (data?.topic ? `Music history: ${data.topic}` : 'Music history');
+                if (docStatusEl) docStatusEl.textContent = `Generated: ${title} — ${songs} songs, ${narr} narration segments.`;
+            } catch {}
+            // Populate raw JSON and reveal expandable section
+            try {
+                if (docOutputEl) docOutputEl.textContent = JSON.stringify(data, null, 2);
+                if (docRawDetails) docRawDetails.classList.remove('hidden');
+            } catch {}
             buildPlaylistFromDoc(data);
         };
 
         try {
             if (state.accessToken) {
                 // 1) Identify artist
+                try { if (docStatusEl) docStatusEl.textContent = 'Identifying artist…'; } catch {}
                 const idResp = await fetch('/api/identify-artist', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1039,6 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const artist = idJson?.artist;
                 if (!artist || !artist.id) {
                     dbg('No artist identified, falling back to single-call generation');
+                    try { if (docStatusEl) docStatusEl.textContent = 'Artist not found. Generating outline without catalog…'; } catch {}
                     // Fallback to single-shot generation
                     const resp = await fetch('/api/music-doc', {
                         method: 'POST',
@@ -1047,10 +1069,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     if (!resp.ok) throw new Error(`Server error ${resp.status}`);
                     const json = await resp.json();
-                    return buildFromDoc(json?.data);
+                    // Generate TTS
+                    try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
+                    const withTTS = await generateTTSForDoc(json?.data);
+                    return buildFromDoc(withTTS);
                 }
 
                 // 2) Fetch artist catalog
+                try { if (docStatusEl) docStatusEl.textContent = 'Fetching catalog from Spotify…'; } catch {}
                 const catResp = await fetch('/api/artist-tracks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1062,6 +1088,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // 3) Ask LLM to build the documentary using the catalog (expecting track_uri/track_id)
                 const ownerId = await fetchSpotifyUserId();
+                try { if (docStatusEl) docStatusEl.textContent = 'Generating documentary outline…'; } catch {}
                 const docResp = await fetch('/api/music-doc', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1072,6 +1099,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const drafted = docJson?.data;
                 const playlistId = docJson?.playlistId;
                 // Generate TTS for narration, then build
+                try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
                 const withTTS = await generateTTSForDoc(drafted);
                 // Finalize persisted record (attach TTS URLs and any final fields)
                 if (playlistId) {
@@ -1105,6 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // No token: original single-call flow
+            try { if (docStatusEl) docStatusEl.textContent = 'Generating documentary outline…'; } catch {}
             const ownerId = await fetchSpotifyUserId();
             const resp = await fetch('/api/music-doc', {
                 method: 'POST',
@@ -1115,6 +1144,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const json = await resp.json();
             const drafted = json?.data;
             const playlistId = json?.playlistId;
+            try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
             const withTTS = await generateTTSForDoc(drafted);
             if (playlistId) {
                 await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
@@ -1145,7 +1175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             buildFromDoc(withTTS);
         } catch (err) {
             console.error('doc gen failed', err);
-            if (docOutputEl) docOutputEl.textContent = 'Generation failed. Please try again.';
+            if (docStatusEl) docStatusEl.textContent = 'Generation failed. Please try again.';
         } finally {
             // UI: hide spinner and enable button
             try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
@@ -1178,21 +1208,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const id = (loadIdInput.value || '').trim();
             if (!id) return;
             try {
-                if (docOutputEl) docOutputEl.textContent = 'Loading playlist...';
+                if (docStatusEl) docStatusEl.textContent = 'Loading playlist…';
+                if (docRawDetails) { docRawDetails.classList.add('hidden'); docRawDetails.open = false; }
                 const r = await fetch(`/api/playlists/${encodeURIComponent(id)}`);
                 if (!r.ok) throw new Error('Not found');
                 const json = await r.json();
-                const rec = json?.playlist;
-                if (!rec) throw new Error('Invalid playlist');
-                if (saveStatusEl) {
-                    const shareUrl = `${window.location.origin}/player.html?playlistId=${rec.id}`;
-                    saveStatusEl.textContent = `Loaded: ${rec.title} — ID: ${rec.id} — ${shareUrl}`;
-                }
-                if (docOutputEl) docOutputEl.textContent = JSON.stringify(rec, null, 2);
-                buildPlaylistFromDoc(rec);
+                const pl = json?.playlist;
+                if (!pl || !Array.isArray(pl.timeline)) throw new Error('Invalid playlist data');
+                // Show concise status
+                try {
+                    const items = Array.isArray(pl.timeline) ? pl.timeline : [];
+                    const songs = items.filter(x => x && x.type === 'song').length;
+                    const narr = items.filter(x => x && x.type === 'narration').length;
+                    const title = pl?.title || (pl?.topic ? `Music history: ${pl.topic}` : 'Music history');
+                    if (docStatusEl) docStatusEl.textContent = `Loaded: ${title} — ${songs} songs, ${narr} narration segments.`;
+                } catch {}
+                // Populate raw and reveal
+                try {
+                    if (docOutputEl) docOutputEl.textContent = JSON.stringify(pl, null, 2);
+                    if (docRawDetails) docRawDetails.classList.remove('hidden');
+                } catch {}
+                buildPlaylistFromDoc(pl);
             } catch (e) {
-                console.error('load by id failed', e);
-                if (docOutputEl) docOutputEl.textContent = 'Load failed. Please check the ID.';
+                console.error('load by id error', e);
+                if (docStatusEl) docStatusEl.textContent = 'Playlist not found.';
             }
         });
     }
