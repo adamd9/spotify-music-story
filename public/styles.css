@@ -15,6 +15,7 @@
         display: grid;
         grid-template-columns: 1fr auto; /* now-playing grows, controls auto width */
         grid-template-areas:
+            "meta       meta"
             "nowplaying controls"
             "nowplaying volume"
             "playlist   playlist";
@@ -119,6 +120,36 @@ header p {
     display: flex;
     align-items: center;
     margin-bottom: 30px;
+}
+
+/* Document metadata (title, topic, summary) above the player */
+.doc-meta {
+    margin-bottom: 14px;
+}
+.doc-title {
+    font-size: 1.4rem;
+    line-height: 1.2;
+    margin: 0 0 6px;
+}
+.doc-topic {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 2px 0 8px;
+}
+.doc-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.doc-topic-value {
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+.doc-summary {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
 }
 
 .album-art {

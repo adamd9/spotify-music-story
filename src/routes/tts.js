@@ -9,12 +9,12 @@ const router = express.Router();
 
 router.post('/api/tts-batch', async (req, res) => {
   try {
-    const { segments } = req.body || {};
+    const { segments, playlistId } = req.body || {};
     if (!Array.isArray(segments) || segments.length === 0) {
       return res.status(400).json({ error: 'segments must be a non-empty array of { text }' });
     }
     await fsp.mkdir(config.paths.ttsOutputDir, { recursive: true });
-    dbg('tts-batch: start', { count: segments.length, model: config.openai.ttsModel, voice: config.openai.ttsVoice, outDir: config.paths.ttsOutputDir, mock: !!config.features?.mockTts });
+    dbg('tts-batch: start', { count: segments.length, model: config.openai.ttsModel, voice: config.openai.ttsVoice, outDir: config.paths.ttsOutputDir, mock: !!config.features?.mockTts, playlistId });
 
     // Mock mode: return a known local MP3 for each segment (no OpenAI call)
     if (config.features && config.features.mockTts) {
@@ -24,6 +24,7 @@ router.post('/api/tts-batch', async (req, res) => {
     }
 
     const urls = [];
+    const pid = (typeof playlistId === 'string' && playlistId) ? playlistId.replace(/[^a-zA-Z0-9_-]/g, '-') : null;
     let idx = 0;
     for (const seg of segments) {
       const text = (seg && typeof seg.text === 'string') ? seg.text.trim() : '';
@@ -32,7 +33,8 @@ router.post('/api/tts-batch', async (req, res) => {
         idx++;
         continue;
       }
-      const fileName = `tts_${Date.now()}_${idx}.mp3`;
+      const base = pid ? `tts_${pid}_${idx}` : `tts_${Date.now()}_${idx}`;
+      const fileName = `${base}.mp3`;
       const filePath = path.join(config.paths.ttsOutputDir, fileName);
       const publicUrl = `/tts/${fileName}`;
       try {

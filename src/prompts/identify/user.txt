@@ -1,0 +1,7 @@
+Query: {{QUERY}}
+
+Task:
+- Normalize the above user query to the canonical artist name best suited for Spotify search.
+- If useful, include very short notes that would help disambiguate (e.g., country, era, genre).
+
+Return strictly JSON with fields { "normalized": string, "confidence": number, "notes": string(optional) }.

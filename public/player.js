@@ -103,7 +103,7 @@ async function saveGeneratedPlaylist(doc, ownerId) {
 
 
 // Generate TTS for narration segments and attach URLs onto the doc (timeline or legacy)
-async function generateTTSForDoc(doc) {
+async function generateTTSForDoc(doc, playlistId) {
     try {
         if (!doc) return doc;
         let texts = [];
@@ -134,7 +134,7 @@ async function generateTTSForDoc(doc) {
         const resp = await fetch('/api/tts-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ segments: texts })
+            body: JSON.stringify({ segments: texts, playlistId })
         });
         if (!resp.ok) {
             dbg('generateTTSForDoc: tts-batch failed', { status: resp.status });
@@ -216,6 +216,10 @@ const refreshMyPlaylistsBtn = document.getElementById('refresh-my-playlists');
 const docSpinner = document.getElementById('doc-spinner');
 const docStatusEl = document.getElementById('doc-status');
 const docRawDetails = document.getElementById('doc-raw');
+// Doc meta fields in player UI
+const docTitleDisplay = document.getElementById('doc-title');
+const docTopicDisplay = document.getElementById('doc-topic-display');
+const docSummaryDisplay = document.getElementById('doc-summary');
 // Import modal elements
 const importOpenBtn = document.getElementById('import-open-btn');
 const importModal = document.getElementById('import-modal');
@@ -946,7 +950,7 @@ function showError(message) {
 }
 
 // Initialize the player when the page loads
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // Check if we have an access token in the URL
     parseHash();
     // If already authenticated, refresh My Playlists immediately
@@ -1005,6 +1009,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Documentary generator (two-stage flow when Spotify token is available)
     async function handleGenerateDocClick() {
+        if (state.isGeneratingDoc) {
+            dbg('Generate clicked while already generating – ignoring');
+            return;
+        }
+        state.isGeneratingDoc = true;
         // UI: show spinner and disable button
         try { if (docSpinner) docSpinner.classList.remove('hidden'); } catch {}
         try { if (generateDocBtn) generateDocBtn.disabled = true; } catch {}
@@ -1029,6 +1038,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const narr = items.filter(x => x && x.type === 'narration').length;
                 const title = data?.title || (data?.topic ? `Music history: ${data.topic}` : 'Music history');
                 if (docStatusEl) docStatusEl.textContent = `Generated: ${title} — ${songs} songs, ${narr} narration segments.`;
+            } catch {}
+            // Populate player doc meta
+            try {
+                if (docTitleDisplay) docTitleDisplay.textContent = data?.title || '-';
+                if (docTopicDisplay) docTopicDisplay.textContent = data?.topic || '-';
+                if (docSummaryDisplay) docSummaryDisplay.textContent = data?.summary || '-';
             } catch {}
             // Populate raw JSON and reveal expandable section
             try {
@@ -1063,7 +1078,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const json = await resp.json();
                     // Generate TTS
                     try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
-                    const withTTS = await generateTTSForDoc(json?.data);
+                    const withTTS = await generateTTSForDoc(json?.data, undefined);
                     return buildFromDoc(withTTS);
                 }
 
@@ -1092,7 +1107,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const playlistId = docJson?.playlistId;
                 // Generate TTS for narration, then build
                 try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
-                const withTTS = await generateTTSForDoc(drafted);
+                const withTTS = await generateTTSForDoc(drafted, playlistId);
                 // Finalize persisted record (attach TTS URLs and any final fields)
                 if (playlistId) {
                     await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
@@ -1137,7 +1152,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const drafted = json?.data;
             const playlistId = json?.playlistId;
             try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
-            const withTTS = await generateTTSForDoc(drafted);
+            const withTTS = await generateTTSForDoc(drafted, playlistId);
             if (playlistId) {
                 await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
                     method: 'PATCH',
@@ -1172,6 +1187,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // UI: hide spinner and enable button
             try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
             try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
+            state.isGeneratingDoc = false;
         }
     }
 
@@ -1224,6 +1240,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     const title = pl?.title || (pl?.topic ? `Music history: ${pl.topic}` : 'Music history');
                     if (docStatusEl) docStatusEl.textContent = `Loaded: ${title} — ${songs} songs, ${narr} narration segments.`;
                 } catch {}
+                // Populate player doc meta from loaded playlist
+                try {
+                    if (docTitleDisplay) docTitleDisplay.textContent = pl?.title || '-';
+                    if (docTopicDisplay) docTopicDisplay.textContent = pl?.topic || '-';
+                    if (docSummaryDisplay) docSummaryDisplay.textContent = pl?.summary || '-';
+                } catch {}
                 // Populate raw and reveal
                 try {
                     if (docOutputEl) docOutputEl.textContent = JSON.stringify(pl, null, 2);
@@ -1251,6 +1273,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pid) {
             if (loadIdInput) loadIdInput.value = pid;
             if (loadIdBtn) loadIdBtn.click();
+        }
+    } catch {}
+
+    // If no explicit playlistId, load initial playlist from server policy
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const pid = params.get('playlistId');
+        if (!pid) {
+            const r = await fetch('/api/initial-playlist');
+            if (r.ok) {
+                const json = await r.json();
+                const initId = json?.id || (json?.playlist && json.playlist.id);
+                if (initId && loadIdInput && loadIdBtn) {
+                    loadIdInput.value = initId;
+                    loadIdBtn.click();
+                }
+            }
         }
     } catch {}
 
