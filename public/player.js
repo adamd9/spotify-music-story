@@ -404,8 +404,7 @@ async function initPlayer() {
             }
             playerSection.classList.remove('hidden');
             
-            // Set up the default playlist (you can customize this)
-            setupDefaultPlaylist();
+            // Default playlist setup removed; playlist is built from generated or loaded docs
         }
         
         state.isInitialized = true;
@@ -547,55 +546,7 @@ async function transferPlaybackHere(deviceId) {
     }
 }
 
-// Set up default playlist (you can customize this)
-function setupDefaultPlaylist() {
-    // Playlist: Californication (Spotify) -> Custom MP3 -> Seven Nation Army (Spotify)
-    state.playlist = [
-        {
-            type: 'spotify',
-            id: null, // will resolve via search
-            name: 'Scar Tissue',
-            artist: 'Red Hot Chili Peppers',
-            albumArt: '',
-            duration: 0
-        },
-        {
-            type: 'mp3',
-            id: 'custom-mp3',
-            name: 'Custom MP3 Insert',
-            artist: 'Local File',
-            albumArt: DEFAULT_ALBUM_ART,
-            duration: 0,
-            url: '/audio/voice-of-character-montervillain-expressions-132288.mp3'
-        },
-        {
-            type: 'spotify',
-            id: null, // will resolve via search
-            name: 'Seven Nation Army',
-            artist: 'The White Stripes',
-            albumArt: '',
-            duration: 0
-        }
-    ];
-    
-    // Render the playlist
-    renderPlaylist();
-    
-    // Set the first track as current
-    if (state.playlist.length > 0) {
-        state.currentTrack = state.playlist[0];
-        state.isSpotifyTrack = state.currentTrack.type === 'spotify';
-        dbg('default currentTrack', { index: 0, track: state.currentTrack });
-        updateNowPlaying({
-            name: state.currentTrack.name,
-            artist: state.currentTrack.artist,
-            albumArt: state.currentTrack.albumArt,
-            duration: state.currentTrack.duration,
-            position: 0,
-            isPlaying: false
-        });
-    }
-}
+// Legacy hard-coded default playlist was removed to avoid overriding loaded/generated playlists
 
 // Render the playlist in the UI
 function renderPlaylist() {
