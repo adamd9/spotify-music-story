@@ -1,0 +1,16 @@
+Artist/Band: {{TOPIC}}
+
+{{EXTRA}}
+
+Top tracks for context (these are popular, but you can choose others if more narratively important):
+{{TOP_TRACKS}}
+
+Task: Plan a compelling audio documentary about this artist. Identify exactly 5 tracks that will tell the most interesting story about their career, evolution, and impact.
+
+Consider:
+- What's the most compelling narrative arc for this artist?
+- Which tracks represent key turning points or moments?
+- What time period or era makes the most sense to cover?
+- Which songs have interesting production stories, cultural impact, or artistic significance?
+
+Return ONLY the JSON plan as specified in the schema. No additional text.

@@ -89,17 +89,115 @@ http://localhost:8888
 
 ## How to Use
 
-1. Go to `http://localhost:8888/player.html` and click “Login with Spotify Premium”.
+1. Go to `http://localhost:8888/player.html` and click "Login with Spotify Premium".
 2. Authorize the app; the player initializes and transfers playback to this device.
-3. To generate a documentary, enter a topic (e.g., “Deftones”) and click “Generate Outline”.
-4. The app will:
-   - Identify the artist using your Spotify token.
-   - Fetch a track catalog (top tracks + albums) and pass it to the OpenAI model.
-   - Receive a single JSON object with an interleaved `timeline` (narration and 5 songs).
-   - Generate TTS MP3s for narration (or use a placeholder in mock mode).
-   - Build a playable playlist alternating narration and songs.
-5. Use controls to play/pause/seek. The UI shows a spinner during generation.
-6. Click “Refresh” under “My Playlists” to see saved documentary items. Use “Share” to copy a shareable link.
+3. To generate a documentary, enter a topic (e.g., "The Prodigy") and click "Generate Outline".
+4. The app uses a **multi-stage intelligent workflow** (see flow diagram below):
+   - **Stage 1**: Identifies the artist using LLM normalization + Spotify search
+   - **Stage 2**: LLM plans the documentary, choosing 5 specific tracks with narrative justification
+   - **Stage 3**: Searches Spotify for those exact tracks
+   - **Stage 4**: Fetches backup catalog if any tracks are missing
+   - **Stage 5**: LLM generates final timeline following the plan
+   - **Stage 6**: Generates TTS narration with British music journalist voice (or mock mode)
+   - **Stage 7**: Saves playlist and builds playable timeline
+5. Use controls to play/pause/seek. The UI shows status updates during generation.
+6. Click "Refresh" under "My Playlists" to see saved documentary items. Use "Share" to copy a shareable link.
+
+## Documentary Generation Flow
+
+The app uses an intelligent multi-stage workflow where the LLM plans the documentary narrative first, then we fetch the specific tracks it needs:
+
+```mermaid
+flowchart TD
+    Start([User enters artist name]) --> Login{Logged in to<br/>Spotify?}
+    Login -->|No| Error1[Error: Login required]
+    Login -->|Yes| Stage1[Stage 1: Identify Artist]
+    
+    Stage1 --> LLM1[LLM: Normalize artist name]
+    LLM1 --> Spotify1[Spotify: Search for artist]
+    Spotify1 --> CheckArtist{Artist found?}
+    CheckArtist -->|No| Error2[Error: Artist not found]
+    CheckArtist -->|Yes| TopTracks[Fetch top 20 tracks for context]
+    
+    TopTracks --> Stage2[Stage 2: Plan Documentary]
+    Stage2 --> LLM2[LLM: Create documentary plan<br/>- Title & narrative arc<br/>- Era to cover<br/>- 5 specific required tracks<br/>- Why each track is essential<br/>- Narrative role of each]
+    
+    LLM2 --> Stage3[Stage 3: Targeted Track Search]
+    Stage3 --> SearchLoop[For each required track:<br/>Search Spotify by name + artist]
+    SearchLoop --> CheckFound{All 5 tracks<br/>found?}
+    
+    CheckFound -->|Yes| Stage5[Stage 5: Generate Final Documentary]
+    CheckFound -->|No| Stage4[Stage 4: Fetch Backup Catalog]
+    Stage4 --> FetchAlbums[Fetch up to 200 albums]
+    FetchAlbums --> SampleTracks[Sample tracks across albums<br/>for broad coverage]
+    SampleTracks --> Stage5
+    
+    Stage5 --> LLM3[LLM: Generate final timeline<br/>following the plan<br/>- Use found tracks<br/>- Interleave narration & songs<br/>- Chronological order]
+    
+    LLM3 --> Stage6[Stage 6: Generate TTS Narration]
+    Stage6 --> MockCheck{MOCK_TTS<br/>enabled?}
+    MockCheck -->|Yes| MockTTS[Return placeholder MP3]
+    MockCheck -->|No| RealTTS[OpenAI TTS with British<br/>music journalist voice]
+    
+    MockTTS --> Stage7[Stage 7: Save & Build Playlist]
+    RealTTS --> Stage7
+    Stage7 --> SaveDB[(Save to filesystem<br/>data/playlists/)]
+    SaveDB --> BuildUI[Build playable timeline<br/>in player UI]
+    BuildUI --> Done([Ready to play!])
+    
+    style Stage1 fill:#e1f5ff
+    style Stage2 fill:#fff4e1
+    style Stage3 fill:#e1ffe1
+    style Stage4 fill:#ffe1e1
+    style Stage5 fill:#f0e1ff
+    style Stage6 fill:#ffe1f5
+    style Stage7 fill:#e1fff5
+    style LLM1 fill:#ffd700
+    style LLM2 fill:#ffd700
+    style LLM3 fill:#ffd700
+```
+
+### Key Innovation: Plan-First Approach
+
+**Traditional approach**: Fetch random tracks → LLM picks from whatever is available
+
+**Our approach**: LLM plans the story first → Search for specific tracks → Generate final doc
+
+This ensures:
+- ✅ Tracks are chosen for **narrative importance**, not random sampling
+- ✅ Better **chronological coverage** across the artist's career
+- ✅ Each track has a **specific purpose** in the documentary story
+- ✅ **Transparent reasoning** - the plan explains why each track matters
+
+### Example: The Prodigy
+
+**Stage 2 Plan Output**:
+```json
+{
+  "title": "The Prodigy: Rave to Riot",
+  "narrative_arc": "From underground rave pioneers to mainstream crossover...",
+  "era_covered": "1992-1997",
+  "required_tracks": [
+    {
+      "song_title": "Charly",
+      "approximate_year": "1992",
+      "why_essential": "Breakthrough rave anthem that defined early sound",
+      "narrative_role": "Origins - underground rave scene"
+    },
+    {
+      "song_title": "Firestarter",
+      "approximate_year": "1996",
+      "why_essential": "Mainstream crossover moment, controversial punk-rave fusion",
+      "narrative_role": "Peak - commercial breakthrough"
+    }
+    // ... 3 more tracks
+  ]
+}
+```
+
+**Stage 3**: Searches Spotify for "Charly", "Firestarter", etc. by name
+
+**Stage 5**: Generates final documentary using those exact tracks with proper context
 
 ## Customizing the Default Playlist
 
@@ -160,10 +258,13 @@ To customize the playlist, edit the `setupDefaultPlaylist()` function in `public
 
 - **Server (development)** (`src/`)
   - `src/app.js`, `src/server.js`: Express app with modular routes.
-  - `src/routes/tts.js`: `/api/tts-batch` for TTS (honors `MOCK_TTS`).
-  - `src/routes/musicDoc.js`: `/api/music-doc` to generate an outline via OpenAI Responses API (model: `gpt-5-mini`).
+  - `src/routes/tts.js`: `/api/tts-batch` for TTS with voice instructions (honors `MOCK_TTS`).
+  - `src/routes/musicDoc.js`: `/api/music-doc` multi-stage documentary generation (plan → search → generate).
   - `src/routes/spotify.js`: Spotify helper endpoints (identify artist, fetch catalog).
-  - `src/routes/playlists.js`: Filesystem-backed playlist persistence (see endpoints below).
+  - `src/routes/playlists.js`: Filesystem-backed playlist persistence.
+  - `src/services/musicPlan.js`: Documentary planning LLM service.
+  - `src/services/trackSearch.js`: Targeted Spotify track search.
+  - `src/prompts/`: Externalized prompt templates for identify, musicDoc, musicPlan, and TTS.
   - `src/config.js`: Central config, including `features.mockTts` and paths.
 
 - **Server (alternative single-file)**
@@ -191,8 +292,13 @@ All routes are served by the Express server. In development, `npm run dev` serve
   - `POST /api/identify-artist` → `{ query, accessToken }` → `{ ok, artist }`.
   - `POST /api/artist-tracks` → `{ artistId, accessToken, market?, desiredCount? }` → `{ ok, tracks }`.
 
-- **Documentary Generation**
-  - `POST /api/music-doc` → Body includes `{ topic, prompt?, catalog? }` and returns `{ ok, data }` where `data` strictly conforms to a JSON schema with a single interleaved `timeline` containing narration and exactly 5 song items.
+- **Documentary Generation (Multi-Stage)**
+  - `POST /api/music-doc` → Body includes `{ topic, accessToken, prompt?, ownerId?, narrationTargetSecs? }` and returns `{ ok, data, playlistId, plan, trackSearchResults }`.
+  - Multi-stage workflow:
+    1. **Plan**: LLM creates documentary outline with specific track requirements
+    2. **Search**: Finds those exact tracks on Spotify
+    3. **Generate**: LLM creates final timeline with actual available tracks
+  - Returns `data` with interleaved `timeline` containing narration and exactly 5 song items, plus the documentary `plan` and track search results.
 
 - **TTS**
   - `POST /api/tts-batch` → `{ segments: [{ text }] }` → `{ ok, urls }`. In mock mode (`MOCK_TTS=1`), returns a placeholder MP3 URL for each segment without calling OpenAI.

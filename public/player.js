@@ -1170,103 +1170,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         try {
-            if (state.accessToken) {
-                // 1) Identify artist
-                try { if (docStatusEl) docStatusEl.textContent = 'Identifying artist…'; } catch {}
-                const idResp = await fetch('/api/identify-artist', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: topic, accessToken: state.accessToken })
-                });
-                if (!idResp.ok) throw new Error(`identify-artist failed ${idResp.status}`);
-                const idJson = await idResp.json();
-                const artist = idJson?.artist;
-                if (!artist || !artist.id) {
-                    dbg('No artist identified, falling back to single-call generation');
-                    try { if (docStatusEl) docStatusEl.textContent = 'Artist not found. Generating outline without catalog…'; } catch {}
-                    // Fallback to single-shot generation
-                    const resp = await fetch('/api/music-doc', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ topic, prompt, narrationTargetSecs })
-                    });
-                    if (!resp.ok) throw new Error(`Server error ${resp.status}`);
-                    const json = await resp.json();
-                    // Generate TTS
-                    try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
-                    const withTTS = await generateTTSForDoc(json?.data, undefined);
-                    return buildFromDoc(withTTS);
-                }
-
-                // 2) Fetch artist catalog
-                try { if (docStatusEl) docStatusEl.textContent = 'Fetching catalog from Spotify…'; } catch {}
-                const catResp = await fetch('/api/artist-tracks', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ artistId: artist.id, accessToken: state.accessToken, desiredCount: 100 })
-                });
-                if (!catResp.ok) throw new Error(`artist-tracks failed ${catResp.status}`);
-                const catJson = await catResp.json();
-                const catalog = Array.isArray(catJson?.tracks) ? catJson.tracks : [];
-
-                // 3) Ask LLM to build the documentary using the catalog (expecting track_uri/track_id)
-                const ownerId = await fetchSpotifyUserId();
-                try { if (docStatusEl) docStatusEl.textContent = 'Generating documentary outline…'; } catch {}
-                const docResp = await fetch('/api/music-doc', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ topic, prompt, catalog, ownerId, narrationTargetSecs })
-                });
-                if (!docResp.ok) throw new Error(`music-doc failed ${docResp.status}`);
-                const docJson = await docResp.json();
-                const drafted = docJson?.data;
-                const playlistId = docJson?.playlistId;
-                // Generate TTS for narration, then build
-                try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
-                const withTTS = await generateTTSForDoc(drafted, playlistId);
-                // Finalize persisted record (attach TTS URLs and any final fields)
-                if (playlistId) {
-                    await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            title: withTTS.title || drafted.title,
-                            topic: withTTS.topic || drafted.topic,
-                            summary: withTTS.summary || drafted.summary,
-                            timeline: withTTS.timeline
-                        })
-                    });
-                    if (saveStatusEl) {
-                        const shareUrl = `${window.location.origin}/player.html?playlistId=${playlistId}`;
-                        saveStatusEl.textContent = `Saved as: ${withTTS.title || drafted.title || 'Music history'} — Share ID: ${playlistId} — ${shareUrl}`;
-                    }
-                    // Update My Playlists UI
-                    try { await refreshMyPlaylists(); } catch {}
-                } else {
-                    // Persist new playlist if none was created server-side
-                    const ownerId2 = ownerId || (await fetchSpotifyUserId()) || 'anonymous';
-                    const saved = await saveGeneratedPlaylist(withTTS, ownerId2);
-                    if (saved && saveStatusEl) {
-                        const shareUrl = `${window.location.origin}/player.html?playlistId=${saved.id}`;
-                        saveStatusEl.textContent = `Saved as: ${saved.title || 'Music history'} — Share ID: ${saved.id} — ${shareUrl}`;
-                        try { await refreshMyPlaylists(); } catch {}
-                    }
-                }
-                return buildFromDoc(withTTS);
+            if (!state.accessToken) {
+                throw new Error('Spotify login required. Please log in to generate documentaries.');
             }
 
-            // No token: original single-call flow
-            try { if (docStatusEl) docStatusEl.textContent = 'Generating documentary outline…'; } catch {}
+            // Multi-stage workflow: plan → search → generate
             const ownerId = await fetchSpotifyUserId();
-            const resp = await fetch('/api/music-doc', {
+            try { if (docStatusEl) docStatusEl.textContent = 'Planning documentary…'; } catch {}
+            
+            const docResp = await fetch('/api/music-doc', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ topic, prompt, ownerId, narrationTargetSecs })
+                body: JSON.stringify({ 
+                    topic, 
+                    prompt, 
+                    accessToken: state.accessToken,
+                    ownerId, 
+                    narrationTargetSecs 
+                })
             });
-            if (!resp.ok) throw new Error(`Server error ${resp.status}`);
-            const json = await resp.json();
-            const drafted = json?.data;
-            const playlistId = json?.playlistId;
+            
+            if (!docResp.ok) {
+                const errText = await docResp.text().catch(() => '');
+                throw new Error(`Documentary generation failed: ${docResp.status} ${errText}`);
+            }
+            
+            const docJson = await docResp.json();
+            const drafted = docJson?.data;
+            const playlistId = docJson?.playlistId;
             try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
             const withTTS = await generateTTSForDoc(drafted, playlistId);
             if (playlistId) {

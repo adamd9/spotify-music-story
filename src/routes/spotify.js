@@ -17,7 +17,8 @@ router.post('/api/identify-artist', async (req, res) => {
     const normalized = (norm && norm.normalized) ? norm.normalized : query;
     const hint = (norm && norm.notes) ? norm.notes : '';
     // Search only by normalized name (don't include hint/notes - too restrictive)
-    const url = `https://api.spotify.com/v1/search?type=artist&limit=1&q=${encodeURIComponent(normalized)}`;
+    // Get top 5 results to validate and find best match
+    const url = `https://api.spotify.com/v1/search?type=artist&limit=5&q=${encodeURIComponent(normalized)}`;
     dbg('identify-artist: request', { original: query, normalized, hint, url, accessToken: safeToken(accessToken) });
     const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     dbg('identify-artist: response status', r.status);
@@ -27,13 +28,57 @@ router.post('/api/identify-artist', async (req, res) => {
       return res.status(r.status).json({ error: 'Spotify search failed', details: txt });
     }
     const data = await r.json();
-    dbg('identify-artist: top result', {
-      count: data?.artists?.items?.length || 0,
-      first: data?.artists?.items?.[0]?.name || null,
-      id: data?.artists?.items?.[0]?.id || null
+    const results = data.artists?.items || [];
+    dbg('identify-artist: results', {
+      count: results.length,
+      results: results.slice(0, 3).map(a => ({ name: a.name, id: a.id }))
     });
-    const artist = data.artists?.items?.[0] || null;
-    return res.json({ ok: true, artist });
+    
+    // Validate: find best match by comparing normalized name to results
+    // Use case-insensitive fuzzy matching to handle variations
+    const normalizedLower = normalized.toLowerCase().trim();
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    for (const artist of results) {
+      const artistNameLower = (artist.name || '').toLowerCase().trim();
+      
+      // Exact match (best)
+      if (artistNameLower === normalizedLower) {
+        bestMatch = artist;
+        bestScore = 1.0;
+        break;
+      }
+      
+      // Contains match (good)
+      if (artistNameLower.includes(normalizedLower) || normalizedLower.includes(artistNameLower)) {
+        const score = 0.8;
+        if (score > bestScore) {
+          bestMatch = artist;
+          bestScore = score;
+        }
+      }
+    }
+    
+    if (!bestMatch || bestScore < 0.8) {
+      dbg('identify-artist: no good match found', { 
+        searched: normalized, 
+        topResult: results[0]?.name,
+        bestScore 
+      });
+      return res.status(404).json({ 
+        error: 'Artist not found or ambiguous match',
+        searched: normalized,
+        suggestions: results.slice(0, 3).map(a => a.name)
+      });
+    }
+    
+    dbg('identify-artist: matched', { 
+      searched: normalized, 
+      matched: bestMatch.name, 
+      score: bestScore 
+    });
+    return res.json({ ok: true, artist: bestMatch });
   } catch (e) {
     console.error('identify-artist error', e);
     return res.status(500).json({ error: 'Failed to identify artist' });
