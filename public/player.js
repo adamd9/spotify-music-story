@@ -236,6 +236,12 @@ const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
 </g>\
 </svg>';
 
+// HTMLAudioElement for narration/local playback (iOS friendly)
+const narrationAudio = document.getElementById('narration-audio');
+if (narrationAudio) {
+    narrationAudio.volume = state.volume;
+}
+
 // Build playlist from documentary JSON (supports both legacy structure + new timeline)
 function buildPlaylistFromDoc(doc) {
     try {
@@ -516,6 +522,9 @@ function setupEventListeners() {
         if (state.gainNode) {
             state.gainNode.gain.value = volume;
         }
+        if (narrationAudio) {
+            narrationAudio.volume = volume;
+        }
     });
     
     // Update progress bar
@@ -615,6 +624,11 @@ async function playSpotifyTrack(track) {
             try { state.audioSource.stop(); } catch (_) {}
             state.audioSource = null;
         }
+        // Also pause HTMLAudioElement narration if playing
+        if (narrationAudio) {
+            try { narrationAudio.onended = null; } catch (_) {}
+            try { narrationAudio.pause(); } catch (_) {}
+        }
         // Mark source as Spotify
         state.isSpotifyTrack = true;
         
@@ -680,57 +694,55 @@ async function playSpotifyTrack(track) {
 // Play a local MP3 file
 async function playLocalMP3(track) {
     try {
-        // Mark source as local to suppress Spotify state updates
         state.isSpotifyTrack = false;
-        // First, pause Spotify playback
-        dbg('pausing Spotify before local MP3');
-        await state.spotifyPlayer.pause();
-        
-        // Stop any currently playing audio
+        // Pause Spotify if currently playing
+        if (state.spotifyPlayer) {
+            try { state.spotifyPlayer.pause(); } catch (_) {}
+        }
+        // Stop any WebAudio source
         if (state.audioSource) {
-            dbg('stopping existing local audio');
             try { state.audioSource.onended = null; } catch (_) {}
             try { state.audioSource.stop(); } catch (_) {}
             state.audioSource = null;
         }
-        
-        // Create a new audio source
-        dbg('fetching MP3', { url: track.url });
-        const response = await fetch(track.url);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer).catch(err => {
-            dbg('decodeAudioData error', err);
-            throw err;
-        });
-        
-        state.audioSource = state.audioContext.createBufferSource();
-        state.audioSource.buffer = audioBuffer;
-        state.audioSource.connect(state.gainNode);
-        state.gainNode.connect(state.audioContext.destination);
-        
-        // Set up event listeners for when the track ends
-        state.audioSource.onended = () => {
-            dbg('local MP3 ended');
-            playNext();
-        };
-        
-        // Start playing
+        if (narrationAudio) {
+            narrationAudio.src = track.url;
+            narrationAudio.currentTime = 0;
+            narrationAudio.volume = state.volume;
+            narrationAudio.onended = () => playNext();
+            await narrationAudio.play();
+        }
         state.audioStartTime = Date.now();
         state.audioPauseTime = undefined;
-        dbg('starting local MP3', { durationMs: audioBuffer.duration * 1000 });
-        state.audioSource.start();
         state.isPlaying = true;
         updatePlayPauseButton();
-        
-        // Update duration
-        state.duration = audioBuffer.duration * 1000; // Convert to ms
-        updateNowPlaying({
-            duration: state.duration,
-            position: 0,
-            isPlaying: true
-        });
+        // We do not know duration until metadata loads; update when available
+        if (narrationAudio) {
+            if (isFinite(narrationAudio.duration) && narrationAudio.duration > 0) {
+                state.duration = narrationAudio.duration * 1000;
+            }
+            narrationAudio.onloadedmetadata = () => {
+                state.duration = narrationAudio.duration * 1000;
+                updateNowPlaying({ duration: state.duration });
+            };
+        }
+        updateNowPlaying({ position: 0, isPlaying: true });
+        // Media Session metadata for iOS lockscreen
+        if ('mediaSession' in navigator) {
+            try {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: track.name || 'Narration',
+                    artist: track.artist || 'Narrator',
+                    artwork: [{ src: track.albumArt || DEFAULT_ALBUM_ART, sizes: '300x300', type: 'image/png' }]
+                });
+                navigator.mediaSession.setActionHandler('play', () => togglePlayPause());
+                navigator.mediaSession.setActionHandler('pause', () => togglePlayPause());
+                navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
+                navigator.mediaSession.setActionHandler('previoustrack', () => playPrevious());
+            } catch {}
+        }
     } catch (error) {
-        console.error('Error playing MP3:', error);
+        console.error('Error playing MP3 (element):', error);
         showError('Failed to play MP3');
     }
 }
@@ -743,30 +755,26 @@ function togglePlayPause() {
         if (state.isSpotifyTrack) {
             dbg('toggle pause: Spotify');
             state.spotifyPlayer.pause();
-        } else if (state.audioSource) {
-            // Pause local audio by stopping and tracking elapsed time
-            dbg('toggle pause: local MP3');
-            try { state.audioSource.onended = null; } catch (_) {}
-            try { state.audioSource.stop(); } catch (_) {}
-            state.audioSource = null;
+        } else if (narrationAudio) {
+            // Pause local audio element
+            dbg('toggle pause: local MP3 (element)');
+            narrationAudio.pause();
             state.audioPauseTime = Date.now();
         }
         state.isPlaying = false;
     } else {
-        // If the current selected track hasn't been started yet, start it now
-        if (state.startedTrackIndex !== state.currentTrackIndex) {
-            dbg('toggle play: starting current selection');
-            playTrack(state.currentTrackIndex);
-        } else if (state.currentTrack.type === 'spotify') {
+        if (state.isSpotifyTrack) {
             dbg('toggle resume: Spotify');
             state.spotifyPlayer.resume();
         } else {
-            // Resume local audio from last position
-            const elapsed = state.audioPauseTime && state.audioStartTime
-                ? (state.audioPauseTime - state.audioStartTime) / 1000
-                : 0;
-            dbg('toggle resume: local MP3', { offsetSeconds: elapsed });
-            resumeLocalAt(elapsed);
+            // Resume local audio element
+            if (narrationAudio && narrationAudio.src) {
+                dbg('toggle resume: local MP3 (element)');
+                narrationAudio.play();
+            } else if (state.currentTrack && state.currentTrack.url) {
+                // No src set yet, start fresh
+                playLocalMP3(state.currentTrack);
+            }
         }
         state.isPlaying = true;
     }
@@ -776,31 +784,16 @@ function togglePlayPause() {
 
 // Resume local audio at a given offset in seconds
 function resumeLocalAt(offsetSeconds) {
-    if (!state.currentTrack || state.currentTrack.type !== 'mp3') return;
-    dbg('resumeLocalAt', { offsetSeconds });
-    fetch(state.currentTrack.url)
-        .then(r => r.arrayBuffer())
-        .then(ab => state.audioContext.decodeAudioData(ab))
-        .then(audioBuffer => {
-            if (state.audioSource) {
-                try { state.audioSource.onended = null; } catch (_) {}
-                try { state.audioSource.stop(); } catch (_) {}
-                state.audioSource = null;
-            }
-            state.audioSource = state.audioContext.createBufferSource();
-            state.audioSource.buffer = audioBuffer;
-            state.audioSource.connect(state.gainNode);
-            state.gainNode.connect(state.audioContext.destination);
-            state.audioSource.onended = () => playNext();
-            state.audioStartTime = Date.now() - Math.floor(offsetSeconds * 1000);
-            state.audioPauseTime = undefined;
-            dbg('starting local MP3 at offset', { offsetSeconds });
-            state.audioSource.start(0, Math.max(0, offsetSeconds));
-        })
-        .catch(err => {
-            console.error('Error resuming MP3:', err);
-            showError('Failed to seek MP3');
-        });
+    if (!state.currentTrack || state.currentTrack.type !== 'mp3' || !narrationAudio) return;
+    try {
+        narrationAudio.currentTime = Math.max(0, offsetSeconds);
+        narrationAudio.play();
+        state.audioStartTime = Date.now() - Math.floor(offsetSeconds * 1000);
+        state.audioPauseTime = undefined;
+    } catch (err) {
+        console.error('Error resuming MP3 (element):', err);
+        showError('Failed to seek MP3');
+    }
 }
 
 // Play the next track
