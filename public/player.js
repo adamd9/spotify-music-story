@@ -25,6 +25,24 @@ async function fetchSpotifyUserId() {
     }
 }
 
+// Show an empty state when no playlist is available
+function showEmptyState(message) {
+    try { if (docStatusEl) docStatusEl.textContent = message || 'No playlist loaded.'; } catch {}
+    try {
+        if (trackNameElement) trackNameElement.textContent = 'No playlist loaded';
+        if (artistNameElement) artistNameElement.textContent = '—';
+        if (albumArtElement) albumArtElement.src = DEFAULT_ALBUM_ART;
+        if (progressBar) progressBar.style.width = '0%';
+        if (currentTimeElement) currentTimeElement.textContent = '0:00';
+        if (durationElement) durationElement.textContent = '0:00';
+    } catch {}
+    try {
+        if (playlistElement) playlistElement.innerHTML = '<li class="placeholder">No items. Generate an outline or import a playlist to begin.</li>';
+    } catch {}
+    // Hide all player sections in empty state
+    setPlayerSectionsVisible(false);
+}
+
 const dbg = (...args) => { if (DEBUG) console.log('[DBG]', ...args); };
 
 // My Playlists rendering and actions
@@ -204,6 +222,24 @@ const playlistElement = document.getElementById('playlist');
 const errorElement = document.getElementById('error');
 const localBadgeElement = document.getElementById('local-badge');
 
+// Player section containers
+const docMetaEl = document.querySelector('#player .doc-meta');
+const nowPlayingEl = document.querySelector('#player .now-playing');
+const controlsEl = document.querySelector('#player .controls');
+const volumeEl = document.querySelector('#player .volume-control');
+const playlistWrapEl = document.querySelector('#player .playlist');
+
+function setPlayerSectionsVisible(visible) {
+    const method = visible ? 'remove' : 'add';
+    // Also toggle the entire player container
+    try { if (playerSection) playerSection.classList[method]('hidden'); } catch {}
+    try { if (docMetaEl) docMetaEl.classList[method]('hidden'); } catch {}
+    try { if (nowPlayingEl) nowPlayingEl.classList[method]('hidden'); } catch {}
+    try { if (controlsEl) controlsEl.classList[method]('hidden'); } catch {}
+    try { if (volumeEl) volumeEl.classList[method]('hidden'); } catch {}
+    try { if (playlistWrapEl) playlistWrapEl.classList[method]('hidden'); } catch {}
+}
+
 // Documentary generation UI elements (index page)
 const docTopicInput = document.getElementById('doc-topic');
 const generateDocBtn = document.getElementById('generate-doc');
@@ -329,6 +365,7 @@ function buildPlaylistFromDoc(doc) {
         state.isSpotifyTrack = state.currentTrack.type === 'spotify';
         state.startedTrackIndex = -1; // nothing played yet
         renderPlaylist();
+        setPlayerSectionsVisible(true);
         updateNowPlaying({
             name: state.currentTrack.name,
             artist: state.currentTrack.artist,
@@ -359,9 +396,20 @@ window.onSpotifyWebPlaybackSDKReady = () => {
 function parseHash() {
     const hash = window.location.hash.substring(1);
     const params = new URLSearchParams(hash);
-    state.accessToken = params.get('access_token');
+    const hashToken = params.get('access_token');
+    // Prefer sessionStorage; fall back to localStorage
+    const storage = window.sessionStorage || window.localStorage;
+    if (hashToken) {
+        try { storage.setItem('spotify_access_token', hashToken); } catch {}
+        // Hard clear the URL hash so the token is not visible
+        try { window.history.replaceState({}, '', window.location.pathname + window.location.search); } catch {}
+        state.accessToken = hashToken;
+    } else {
+        // Attempt to retrieve from storage
+        try { state.accessToken = storage.getItem('spotify_access_token') || null; } catch { state.accessToken = null; }
+    }
     dbg('parseHash', { hasToken: !!state.accessToken, path: window.location.pathname });
-    
+
     if (state.accessToken) {
         if (state.sdkReady) {
             initPlayer();
@@ -1225,6 +1273,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Hide player sections until something is loaded
+    setPlayerSectionsVisible(false);
+
     // Auto-load by playlistId query param
     try {
         const params = new URLSearchParams(window.location.search);
@@ -1235,42 +1286,66 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch {}
 
-    // If no explicit playlistId, load initial playlist from server policy (build directly)
+    // If no explicit playlistId:
+    // 1) If user is logged in and has at least one playlist, load their latest
+    // 2) Else, load env-configured initial playlist (server returns from runtime data)
     try {
         const params = new URLSearchParams(window.location.search);
         const pid = params.get('playlistId');
         if (!pid) {
-            const r = await fetch('/api/initial-playlist');
-            if (r.ok) {
-                const json = await r.json();
-                const initId = json?.id || (json?.playlist && json.playlist.id);
-                const pl = json?.playlist;
-                if (pl && Array.isArray(pl.timeline)) {
-                    // Update status/meta and build
-                    try {
-                        const items = Array.isArray(pl.timeline) ? pl.timeline : [];
-                        const songs = items.filter(x => x && x.type === 'song').length;
-                        const narr = items.filter(x => x && x.type === 'narration').length;
-                        const title = pl?.title || (pl?.topic ? `Music history: ${pl.topic}` : 'Music history');
-                        if (docStatusEl) docStatusEl.textContent = `Loaded: ${title} — ${songs} songs, ${narr} narration segments.`;
-                    } catch {}
-                    try {
-                        if (docTitleDisplay) docTitleDisplay.textContent = pl?.title || '-';
-                        if (docTopicDisplay) docTopicDisplay.textContent = pl?.topic || '-';
-                        if (docSummaryDisplay) docSummaryDisplay.textContent = pl?.summary || '-';
-                    } catch {}
-                    try {
-                        if (docOutputEl) docOutputEl.textContent = JSON.stringify(pl, null, 2);
-                        if (docRawDetails) docRawDetails.classList.remove('hidden');
-                    } catch {}
-                    buildPlaylistFromDoc(pl);
-                    if (initId) state.loadedPlaylistId = initId;
-                    // Optionally update URL for shareability
-                    try { if (initId) window.history.replaceState({}, '', `?playlistId=${encodeURIComponent(initId)}`); } catch {}
-                } else if (initId && loadIdInput && loadIdBtn) {
-                    // Fallback: load by id if server didn't include playlist data
-                    loadIdInput.value = initId;
-                    loadIdBtn.click();
+            let loaded = false;
+            // Try user latest
+            const ownerId = await fetchSpotifyUserId();
+            if (ownerId) {
+                try {
+                    const lr = await fetch(`/api/users/${encodeURIComponent(ownerId)}/playlists`);
+                    if (lr.ok) {
+                        const ljson = await lr.json();
+                        const list = Array.isArray(ljson?.playlists) ? ljson.playlists : [];
+                        if (list.length > 0) {
+                            const latest = list[0]; // storage sorts desc by createdAt
+                            if (latest && Array.isArray(latest.timeline)) {
+                                try {
+                                    if (docTitleDisplay) docTitleDisplay.textContent = latest?.title || '-';
+                                    if (docTopicDisplay) docTopicDisplay.textContent = latest?.topic || '-';
+                                    if (docSummaryDisplay) docSummaryDisplay.textContent = latest?.summary || '-';
+                                } catch {}
+                                try {
+                                    if (docOutputEl) docOutputEl.textContent = JSON.stringify(latest, null, 2);
+                                    if (docRawDetails) docRawDetails.classList.remove('hidden');
+                                } catch {}
+                                buildPlaylistFromDoc(latest);
+                                if (latest.id) state.loadedPlaylistId = latest.id;
+                                loaded = true;
+                            }
+                        }
+                    }
+                } catch {}
+            }
+            if (!loaded) {
+                // Fall back to env-configured initial (may be empty)
+                const r = await fetch('/api/initial-playlist');
+                if (r.ok) {
+                    const json = await r.json();
+                    const initId = json?.id || (json?.playlist && json.playlist.id);
+                    const pl = json?.playlist;
+                    if (pl && Array.isArray(pl.timeline)) {
+                        try {
+                            if (docTitleDisplay) docTitleDisplay.textContent = pl?.title || '-';
+                            if (docTopicDisplay) docTopicDisplay.textContent = pl?.topic || '-';
+                            if (docSummaryDisplay) docSummaryDisplay.textContent = pl?.summary || '-';
+                        } catch {}
+                        try {
+                            if (docOutputEl) docOutputEl.textContent = JSON.stringify(pl, null, 2);
+                            if (docRawDetails) docRawDetails.classList.remove('hidden');
+                        } catch {}
+                        buildPlaylistFromDoc(pl);
+                        if (initId) state.loadedPlaylistId = initId;
+                    } else {
+                        showEmptyState('No default playlist configured. Generate an outline or import one to begin.');
+                    }
+                } else {
+                    showEmptyState('No default playlist configured. Generate an outline or import one to begin.');
                 }
             }
         }

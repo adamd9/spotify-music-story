@@ -19,6 +19,7 @@ const config = {
   port: parseInt(process.env.PORT || '8888', 10),
   clientDebug: process.env.CLIENT_DEBUG === '1' || process.env.DEBUG === '1',
   serverDebug: process.env.SERVER_DEBUG === '1' || process.env.DEBUG === '1',
+  initialPlaylistId: (process.env.INITIAL_PLAYLIST_ID || '').trim(),
   spotify: {
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
