@@ -12,17 +12,11 @@ async function getInitialPlaylistId() {
 
 async function getInitialPlaylist() {
   const id = await getInitialPlaylistId();
-  // Prefer public resource so it's available in production builds
+  // Always load initial from public bundle
   const publicPath = path.join(config.paths.publicDir, 'playlists', `${id}.json`);
-  try {
-    const buf = await fsp.readFile(publicPath, 'utf8');
-    const playlist = JSON.parse(buf);
-    return { id, playlist };
-  } catch (_) {
-    // Fallback to storage (e.g., local data directory)
-    const playlist = await getPlaylist(id);
-    return { id, playlist };
-  }
+  const buf = await fsp.readFile(publicPath, 'utf8');
+  const playlist = JSON.parse(buf);
+  return { id, playlist };
 }
 
 module.exports = { getInitialPlaylistId, getInitialPlaylist };
