@@ -1,6 +1,16 @@
 require('dotenv').config();
 const path = require('path');
 
+// Compute runtime data directory (for Docker or local)
+const dataDir = process.env.RUNTIME_DATA_DIR
+  ? path.resolve(process.env.RUNTIME_DATA_DIR)
+  : path.join(__dirname, '..', 'data');
+
+// Compute TTS output directory (defaults to a subfolder of dataDir)
+const ttsDir = process.env.TTS_OUTPUT_DIR
+  ? path.resolve(process.env.TTS_OUTPUT_DIR)
+  : path.join(dataDir, 'tts');
+
 const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '8888', 10),
@@ -21,7 +31,8 @@ const config = {
   },
   paths: {
     publicDir: path.join(__dirname, '..', 'public'),
-    ttsOutputDir: process.env.TTS_OUTPUT_DIR || path.join(__dirname, '..', 'public', 'tts')
+    dataDir,
+    ttsOutputDir: ttsDir
   }
 };
 

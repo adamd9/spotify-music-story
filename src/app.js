@@ -18,6 +18,8 @@ app.use(express.json());
 
 // Static files
 app.use(express.static(config.paths.publicDir));
+// Serve TTS output directory at /tts even if stored outside publicDir
+app.use('/tts', express.static(config.paths.ttsOutputDir));
 
 // Mount routes
 app.use(configRoute);

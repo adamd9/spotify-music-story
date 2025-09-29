@@ -1,8 +1,9 @@
 const path = require('path');
 const fsp = require('fs').promises;
 const { dbg } = require('../utils/logger');
+const config = require('../config');
 
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
+const DATA_DIR = config.paths.dataDir;
 const PLAYLISTS_DIR = path.join(DATA_DIR, 'playlists');
 
 async function ensureDirs() {
