@@ -71,41 +71,67 @@ router.post('/api/artist-tracks', async (req, res) => {
     };
     (topData.tracks || []).forEach(pushTrack);
 
-    // 2) Albums + singles + compilations (paginate up to ~100 unique tracks total)
+    // 2) Fetch ALL albums first (paginate through album list)
+    const allAlbums = [];
     let offset = 0;
     const pageLimit = 50; // Spotify max per page for albums
-    while (tracksMap.size < desiredCount) {
-      const albumsResp = await fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&market=${market}&limit=${pageLimit}&offset=${offset}` , {
+    const maxAlbumPages = 4; // Fetch up to 200 albums (4 pages × 50)
+    
+    while (offset < pageLimit * maxAlbumPages) {
+      const albumsResp = await fetch(`https://api.spotify.com/v1/artists/${artistId}/albums?include_groups=album,single,compilation&market=${market}&limit=${pageLimit}&offset=${offset}`, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       if (!albumsResp.ok) break;
       const albumsData = await albumsResp.json();
       const albums = albumsData.items || [];
       if (albums.length === 0) break;
-      dbg('artist-tracks: albums page', { offset, pageCount: albums.length });
+      allAlbums.push(...albums);
+      dbg('artist-tracks: albums page', { offset, pageCount: albums.length, totalAlbums: allAlbums.length });
+      offset += pageLimit;
+      if (albums.length < pageLimit) break; // No more pages
+    }
 
-      for (const album of albums) {
+    // 3) Fetch tracks from albums, distributing across the catalog for better coverage
+    // Process albums in order, but limit tracks per album to ensure we sample broadly
+    const tracksPerAlbum = Math.max(3, Math.ceil(desiredCount / Math.max(allAlbums.length, 1)));
+    dbg('artist-tracks: strategy', { totalAlbums: allAlbums.length, tracksPerAlbum, target: desiredCount });
+    
+    for (const album of allAlbums) {
+      if (tracksMap.size >= desiredCount) break;
+      
+      const albumTracksResp = await fetch(`https://api.spotify.com/v1/albums/${album.id}/tracks?market=${market}&limit=50`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!albumTracksResp.ok) continue;
+      const albumTracks = await albumTracksResp.json();
+      
+      // Add tracks from this album (up to tracksPerAlbum, to ensure broad coverage)
+      let addedFromAlbum = 0;
+      for (const t of (albumTracks.items || [])) {
         if (tracksMap.size >= desiredCount) break;
-        const albumTracksResp = await fetch(`https://api.spotify.com/v1/albums/${album.id}/tracks?market=${market}&limit=50`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        if (!albumTracksResp.ok) continue;
-        const albumTracks = await albumTracksResp.json();
-        (albumTracks.items || []).forEach((t) => pushTrack({
+        if (addedFromAlbum >= tracksPerAlbum) break;
+        
+        const trackData = {
           id: t.id,
           uri: t.uri,
           name: t.name,
           artists: t.artists,
           album: { name: album.name, release_date: album.release_date },
           duration_ms: t.duration_ms
-        }));
-        dbg('artist-tracks: album tracks added', { album: album.name, added: (albumTracks.items || []).length, totalUnique: tracksMap.size });
-        if (tracksMap.size >= desiredCount) break;
+        };
+        
+        if (!tracksMap.has(t.id)) {
+          pushTrack(trackData);
+          addedFromAlbum++;
+        }
       }
-
-      // Next page
-      offset += pageLimit;
-      if (offset > 200) break; // up to 200 albums fetched
+      
+      dbg('artist-tracks: album tracks added', { 
+        album: album.name, 
+        year: album.release_date?.substring(0, 4) || 'unknown',
+        added: addedFromAlbum, 
+        totalUnique: tracksMap.size 
+      });
     }
 
     const tracks = Array.from(tracksMap.values()).slice(0, desiredCount);
