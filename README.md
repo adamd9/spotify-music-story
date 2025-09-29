@@ -313,13 +313,15 @@ All routes are served by the Express server. In development, `npm run dev` serve
 
 ## Environment Variables Reference
 
-- `CLIENT_ID`, `CLIENT_SECRET`, `REDIRECT_URI`
-- `PORT`
-- `CLIENT_DEBUG`, `SERVER_DEBUG`
-- `OPENAI_API_KEY`
-- `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`
-- `TTS_OUTPUT_DIR`
-- `MOCK_TTS` (1 to enable placeholder MP3s for TTS)
+- `CLIENT_ID`, `CLIENT_SECRET`, `REDIRECT_URI` - Spotify OAuth credentials
+- `PORT` - Server port (default: 8888)
+- `CLIENT_DEBUG`, `SERVER_DEBUG` - Enable verbose logging
+- `OPENAI_API_KEY` - OpenAI API key for LLM and TTS
+- `OPENAI_TTS_MODEL` - TTS model (default: gpt-4o-mini-tts)
+- `OPENAI_TTS_VOICE` - Voice selection (alloy, echo, fable, onyx, nova, shimmer)
+- `OPENAI_TTS_SPEED` - Playback speed 0.25-4.0 (default: 1.0, recommended: 1.25 for dynamic delivery)
+- `TTS_OUTPUT_DIR` - Where to save generated MP3s
+- `MOCK_TTS` - Set to 1 to use placeholder MP3s instead of OpenAI (saves costs during development)
 
 ---
 

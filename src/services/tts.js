@@ -34,6 +34,7 @@ async function ttsToMp3Buffer(text, options = {}) {
     model: config.openai.ttsModel,
     voice: config.openai.ttsVoice,
     input,
+    speed: config.openai.ttsSpeed,
   };
   
   // Only add instructions if they exist and are non-empty

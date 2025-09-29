@@ -29,6 +29,7 @@ const config = {
     apiKey: process.env.OPENAI_API_KEY,
     ttsModel: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
     ttsVoice: process.env.OPENAI_TTS_VOICE || 'alloy',
+    ttsSpeed: parseFloat(process.env.OPENAI_TTS_SPEED || '1.0'),
   },
   features: {
     mockTts: process.env.MOCK_TTS === '1',

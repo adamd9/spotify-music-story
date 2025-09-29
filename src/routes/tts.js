@@ -17,7 +17,8 @@ router.post('/api/tts-batch', async (req, res) => {
     dbg('tts-batch: start', { 
       count: segments.length, 
       model: config.openai.ttsModel, 
-      voice: config.openai.ttsVoice, 
+      voice: config.openai.ttsVoice,
+      speed: config.openai.ttsSpeed,
       outDir: config.paths.ttsOutputDir, 
       mock: !!config.features?.mockTts, 
       playlistId,
