@@ -1,12 +1,31 @@
 Topic: {{TOPIC}}
 
-Goals:
-- Provide a short, human-friendly playlist title and place it in the 'title' field.
-- Provide a brief summary.
-- Pick exactly 5 songs that represent the topic narrative.
-- Create narration segments that reference songs and can be placed between songs.
-- Build a single interleaved timeline array mixing narration and songs.
-- If a catalog is provided, select songs only from it and include track_id and track_uri.
+Narrative and style goals:
+- Write like a professional music journalist: vivid, precise, and informative. Keep segments TTS-friendly (2–5 sentences each).
+- If provided, subtly adopt this persona and tone: {{STYLE}}.
+- Ensure the entire outline flows strictly in chronological order.
+
+Structural goals:
+- Provide a short, human-friendly playlist title and place it in the `title` field.
+- Provide a brief, compelling summary that reads like the lead-in to a great audio documentary.
+- Pick exactly 5 songs that best represent the topic's narrative arc.
+- Build a single interleaved `timeline` array mixing narration and songs, strictly alternating as a documentary would.
+- The FIRST timeline item MUST be a narration segment that:
+  - Introduces that this is a short audio documentary.
+  - Names the artist/band and clearly states the time period or scope being covered.
+  - Sets expectations for what the listener will learn or hear.
+- BEFORE EACH SONG, include a narration segment that:
+  - Introduces the song (title and year) and that it is about to play.
+  - Provides concise historical context: what was happening with the band/scene/production at that moment and why the track matters.
+
+Timing preference (strictly follow):
+- The user wants each narration segment to be approximately {{NARRATION_TARGET_SECS}} seconds of spoken content.
+- Keep narration concise but sufficiently detailed; adjust sentence count to match the target time.
+- Aim within ±10% of the target per segment; split or tighten phrasing as needed while preserving clarity and chronology.
+
+Catalog rules:
+- If a catalog is provided, select songs ONLY from it and include exact `track_id` and `track_uri`.
+- For each song, include a helpful `spotify_query` such as "Song Title artist:Band Name".
 
 {{EXTRA}}
 

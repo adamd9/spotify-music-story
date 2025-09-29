@@ -201,7 +201,13 @@ const state = {
     isAdPlaying: false,
     isGeneratingDoc: false,
     startedTrackIndex: -1,
-    loadedPlaylistId: null
+    loadedPlaylistId: null,
+    // Section clip control (seconds)
+    sectionClipSeconds: 30,
+    // Internal timing for Spotify clip limiting
+    spotifyClipTimeoutId: null,
+    spotifyClipStartTime: 0,
+    spotifyClipPlayedMs: 0
 };
 
 // DOM Elements
@@ -245,6 +251,7 @@ const docTopicInput = document.getElementById('doc-topic');
 const generateDocBtn = document.getElementById('generate-doc');
 const docOutputEl = document.getElementById('doc-output');
 const docPromptEl = document.getElementById('doc-prompt');
+const sectionDurationSelect = document.getElementById('section-duration');
 const saveStatusEl = document.getElementById('save-status');
 const loadIdInput = document.getElementById('load-id-input');
 const loadIdBtn = document.getElementById('load-id-btn');
@@ -366,6 +373,8 @@ function buildPlaylistFromDoc(doc) {
         state.startedTrackIndex = -1; // nothing played yet
         renderPlaylist();
         setPlayerSectionsVisible(true);
+        // Try to load durations for local MP3s to show in the playlist
+        preloadTrackDurations();
         updateNowPlaying({
             name: state.currentTrack.name,
             artist: state.currentTrack.artist,
@@ -513,6 +522,17 @@ function setupEventListeners() {
                 position: positionMs,
                 isPlaying: !isPaused
             });
+            // Persist duration to playlist item so durations show in the list
+            try {
+                if (Number.isFinite(durationMs) && durationMs > 0) {
+                    const idx = state.currentTrackIndex;
+                    const plItem = state.playlist && state.playlist[idx];
+                    if (plItem && (!plItem.duration || plItem.duration === 0)) {
+                        plItem.duration = durationMs;
+                        renderPlaylist();
+                    }
+                }
+            } catch {}
         }
     });
     
@@ -616,13 +636,18 @@ function renderPlaylist() {
     state.playlist.forEach((track, index) => {
         const li = document.createElement('li');
         li.className = index === state.currentTrackIndex ? 'playing' : '';
+        const dur = (track && track.duration && track.duration > 0) ? formatTime(track.duration) : '';
+        const durHtml = dur ? `<span class="track-duration">${dur}</span>` : '';
         li.innerHTML = `
             <span class="track-number">${index + 1}</span>
             <div class="track-info">
                 <div class="track-title">${track.name}</div>
                 <div class="track-artist">${track.artist}</div>
             </div>
-            ${track.type === 'mp3' ? '<span class="badges"><span class="badge badge-local">LOCAL</span></span>' : ''}
+            <div class="badges">
+                ${track.type === 'mp3' ? '<span class="badge badge-local">LOCAL</span>' : ''}
+                ${durHtml}
+            </div>
         `;
         
         li.addEventListener('click', () => {
@@ -634,10 +659,35 @@ function renderPlaylist() {
     });
 }
 
+// Preload durations for local MP3 tracks so playlist can display them
+function preloadTrackDurations() {
+    try {
+        state.playlist.forEach((t, idx) => {
+            if (!t || t.type !== 'mp3' || !t.url || t.duration > 0) return;
+            const a = new Audio();
+            a.preload = 'metadata';
+            a.src = t.url;
+            a.onloadedmetadata = () => {
+                const d = (isFinite(a.duration) && a.duration > 0) ? Math.floor(a.duration * 1000) : 0;
+                if (d > 0) {
+                    // Update track duration and refresh playlist UI
+                    t.duration = d;
+                    renderPlaylist();
+                }
+            };
+            // Best effort; ignore errors
+            a.onerror = () => {};
+        });
+    } catch {}
+}
+
 // Play a specific track by index
 async function playTrack(index) {
     if (index < 0 || index >= state.playlist.length) return;
     
+    // Clear clip timer when changing tracks
+    clearSpotifyClipTimer();
+
     state.currentTrackIndex = index;
     state.currentTrack = state.playlist[index];
     state.isSpotifyTrack = state.currentTrack.type === 'spotify';
@@ -682,6 +732,8 @@ async function playSpotifyTrack(track) {
         }
         // Mark source as Spotify
         state.isSpotifyTrack = true;
+        // Reset clip timer tracking for new Spotify track
+        clearSpotifyClipTimer();
         
         // Resolve track URI via Spotify Search if not provided
         let trackUri = track.id && track.id.startsWith('spotify:track:') ? track.id : null;
@@ -695,16 +747,21 @@ async function playSpotifyTrack(track) {
                 headers: { 'Authorization': `Bearer ${state.accessToken}` }
             });
             if (!searchResp.ok) throw new Error('Failed to search track');
-            const data = await searchResp.json();
-            const found = data.tracks?.items?.[0];
-            if (!found) throw new Error('Track not found on Spotify');
-            trackUri = found.uri;
-            // Update current track metadata
-            track.id = trackUri;
-            track.name = found.name;
-            track.artist = (found.artists || []).map(a => a.name).join(', ');
-            track.albumArt = found.album?.images?.[0]?.url || '';
-            track.duration = found.duration_ms || track.duration;
+            const searchData = await searchResp.json();
+            const item = searchData?.tracks?.items?.[0];
+            if (!item) throw new Error('No tracks found');
+            trackUri = item.uri;
+            // Persist duration from search result onto playlist item for UI consistency
+            try {
+                if (Number.isFinite(item.duration_ms) && item.duration_ms > 0) {
+                    const idx = state.currentTrackIndex;
+                    const plItem = state.playlist && state.playlist[idx];
+                    if (plItem) {
+                        plItem.duration = item.duration_ms;
+                        renderPlaylist();
+                    }
+                }
+            } catch {}
             dbg('search result', { uri: trackUri, name: track.name, artist: track.artist, duration: track.duration });
             updateNowPlaying({
                 name: track.name,
@@ -735,6 +792,22 @@ async function playSpotifyTrack(track) {
             
             state.isPlaying = true;
             updatePlayPauseButton();
+
+            // Schedule section clip cutoff if configured
+            try {
+                const clipMs = Math.max(0, (state.sectionClipSeconds || 30) * 1000);
+                if (clipMs > 0) {
+                    state.spotifyClipStartTime = Date.now();
+                    if (state.spotifyClipTimeoutId) clearTimeout(state.spotifyClipTimeoutId);
+                    state.spotifyClipTimeoutId = setTimeout(() => {
+                        dbg('Section clip reached – advancing');
+                        state.spotifyClipTimeoutId = null;
+                        state.spotifyClipStartTime = 0;
+                        state.spotifyClipPlayedMs = 0;
+                        playNext();
+                    }, clipMs);
+                }
+            } catch {}
         });
     } catch (error) {
         console.error('Error playing Spotify track:', error);
@@ -746,6 +819,8 @@ async function playSpotifyTrack(track) {
 async function playLocalMP3(track) {
     try {
         state.isSpotifyTrack = false;
+        // Clear clip timer when switching to local MP3
+        clearSpotifyClipTimer();
         // Pause Spotify if currently playing
         if (state.spotifyPlayer) {
             try { state.spotifyPlayer.pause(); } catch (_) {}
@@ -774,6 +849,13 @@ async function playLocalMP3(track) {
             }
             narrationAudio.onloadedmetadata = () => {
                 state.duration = narrationAudio.duration * 1000;
+                // Persist duration onto the track for playlist display
+                try {
+                    if (state.currentTrack && (!state.currentTrack.duration || state.currentTrack.duration === 0)) {
+                        state.currentTrack.duration = state.duration;
+                        renderPlaylist();
+                    }
+                } catch {}
                 updateNowPlaying({ duration: state.duration });
             };
         }
@@ -806,6 +888,15 @@ function togglePlayPause() {
         if (state.isSpotifyTrack) {
             dbg('toggle pause: Spotify');
             state.spotifyPlayer.pause();
+            // Stop clip timer and accumulate played time
+            if (state.spotifyClipTimeoutId) {
+                clearTimeout(state.spotifyClipTimeoutId);
+                state.spotifyClipTimeoutId = null;
+            }
+            if (state.spotifyClipStartTime) {
+                state.spotifyClipPlayedMs += (Date.now() - state.spotifyClipStartTime);
+                state.spotifyClipStartTime = 0;
+            }
         } else if (narrationAudio) {
             // Pause local audio element
             dbg('toggle pause: local MP3 (element)');
@@ -817,6 +908,22 @@ function togglePlayPause() {
         if (state.isSpotifyTrack) {
             dbg('toggle resume: Spotify');
             state.spotifyPlayer.resume();
+            // Resume clip timer for remaining time
+            try {
+                const clipMs = Math.max(0, (state.sectionClipSeconds || 30) * 1000);
+                const remaining = Math.max(0, clipMs - (state.spotifyClipPlayedMs || 0));
+                if (remaining > 0) {
+                    state.spotifyClipStartTime = Date.now();
+                    if (state.spotifyClipTimeoutId) clearTimeout(state.spotifyClipTimeoutId);
+                    state.spotifyClipTimeoutId = setTimeout(() => {
+                        dbg('Section clip reached (resume) – advancing');
+                        state.spotifyClipTimeoutId = null;
+                        state.spotifyClipStartTime = 0;
+                        state.spotifyClipPlayedMs = 0;
+                        playNext();
+                    }, remaining);
+                }
+            } catch {}
         } else {
             // Resume local audio element
             if (narrationAudio && narrationAudio.src) {
@@ -831,6 +938,16 @@ function togglePlayPause() {
     }
     
     updatePlayPauseButton();
+}
+
+// Clear any pending Spotify section-clip timer
+function clearSpotifyClipTimer() {
+    if (state.spotifyClipTimeoutId) {
+        clearTimeout(state.spotifyClipTimeoutId);
+        state.spotifyClipTimeoutId = null;
+    }
+    state.spotifyClipStartTime = 0;
+    state.spotifyClipPlayedMs = 0;
 }
 
 // Resume local audio at a given offset in seconds
@@ -888,31 +1005,56 @@ function updateNowPlaying({ name, artist, albumArt, duration, position, isPlayin
 function updateProgress() {
     if (state.isPlaying) {
         if (state.isSpotifyTrack) {
-            // For Spotify, we get position updates from the player_state_changed event
+            // For Spotify, prefer player_state_changed but also poll current state for smooth updates
+            try {
+                if (state.spotifyPlayer && typeof state.spotifyPlayer.getCurrentState === 'function') {
+                    state.spotifyPlayer.getCurrentState().then(s => {
+                        if (!s) return; // device not active
+                        const pos = Number.isFinite(s.position) ? s.position : state.currentTime;
+                        const dur = Number.isFinite(s.duration) ? s.duration : state.duration;
+                        state.currentTime = pos;
+                        state.duration = dur;
+                        // Persist duration on the current playlist item for display
+                        try {
+                            const idx = state.currentTrackIndex;
+                            const plItem = state.playlist && state.playlist[idx];
+                            if (plItem && (!plItem.duration || plItem.duration === 0) && Number.isFinite(dur) && dur > 0) {
+                                plItem.duration = dur;
+                                renderPlaylist();
+                            }
+                        } catch {}
+                        const progress = state.duration ? (state.currentTime / state.duration) * 100 : 0;
+                        progressBar.style.width = `${progress}%`;
+                        currentTimeElement.textContent = formatTime(state.currentTime);
+                        durationElement.textContent = formatTime(state.duration);
+                    }).catch(() => {});
+                } else {
+                    const progress = state.duration ? (state.currentTime / state.duration) * 100 : 0;
+                    progressBar.style.width = `${progress}%`;
+                    currentTimeElement.textContent = formatTime(state.currentTime);
+                    durationElement.textContent = formatTime(state.duration);
+                }
+            } catch {
+                const progress = state.duration ? (state.currentTime / state.duration) * 100 : 0;
+                progressBar.style.width = `${progress}%`;
+                currentTimeElement.textContent = formatTime(state.currentTime);
+                durationElement.textContent = formatTime(state.duration);
+            }
+        } else if (narrationAudio) {
+            // For local MP3 via HTMLAudioElement, use element timing
+            const durSec = (isFinite(narrationAudio.duration) && narrationAudio.duration > 0)
+                ? narrationAudio.duration
+                : (state.duration ? state.duration / 1000 : 0);
+            const curSec = narrationAudio.currentTime || 0;
+            state.duration = Math.max(0, durSec * 1000);
+            state.currentTime = Math.max(0, curSec * 1000);
+
             const progress = state.duration ? (state.currentTime / state.duration) * 100 : 0;
             progressBar.style.width = `${progress}%`;
-            
+
             // Update time display
             currentTimeElement.textContent = formatTime(state.currentTime);
             durationElement.textContent = formatTime(state.duration);
-        } else if (state.audioSource) {
-            // For local MP3, we need to track time ourselves
-            if (state.audioStartTime && state.audioPauseTime === undefined) {
-                const elapsed = (Date.now() - state.audioStartTime) / 1000; // in seconds
-                state.currentTime = Math.min(elapsed * 1000, state.duration);
-                
-                const progress = state.duration ? (state.currentTime / state.duration) * 100 : 0;
-                progressBar.style.width = `${progress}%`;
-                
-                // Update time display
-                currentTimeElement.textContent = formatTime(state.currentTime);
-                durationElement.textContent = formatTime(state.duration);
-                
-                // Check if we've reached the end
-                if (state.currentTime >= state.duration) {
-                    playNext();
-                }
-            }
         }
     }
     
@@ -1030,6 +1172,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         if (docStatusEl) docStatusEl.textContent = 'Generating outline…';
+        // Read narration target seconds (persisted alongside access token)
+        let narrationTargetSecs = 30;
+        try {
+            const storage = window.sessionStorage || window.localStorage;
+            const st = storage.getItem('narration_target_secs');
+            const n = parseInt(st, 10);
+            if (!isNaN(n) && n > 0) narrationTargetSecs = n;
+        } catch {}
 
         const buildFromDoc = (data) => {
             // Update concise status
@@ -1073,7 +1223,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const resp = await fetch('/api/music-doc', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ topic, prompt })
+                        body: JSON.stringify({ topic, prompt, narrationTargetSecs })
                     });
                     if (!resp.ok) throw new Error(`Server error ${resp.status}`);
                     const json = await resp.json();
@@ -1100,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const docResp = await fetch('/api/music-doc', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ topic, prompt, catalog, ownerId })
+                    body: JSON.stringify({ topic, prompt, catalog, ownerId, narrationTargetSecs })
                 });
                 if (!docResp.ok) throw new Error(`music-doc failed ${docResp.status}`);
                 const docJson = await docResp.json();
@@ -1146,7 +1296,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const resp = await fetch('/api/music-doc', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ topic, prompt, ownerId })
+                body: JSON.stringify({ topic, prompt, ownerId, narrationTargetSecs })
             });
             if (!resp.ok) throw new Error(`Server error ${resp.status}`);
             const json = await resp.json();
@@ -1374,5 +1524,43 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (saveStatusEl) saveStatusEl.textContent = `Share link: ${url}`;
             }
         });
+    }
+
+    // Bind section duration select (default 30s)
+    if (sectionDurationSelect) {
+        const applySectionDuration = () => {
+            const val = parseInt(sectionDurationSelect.value, 10);
+            state.sectionClipSeconds = Number.isFinite(val) && val > 0 ? val : 30;
+            dbg('section duration set', { seconds: state.sectionClipSeconds });
+            // If currently playing a Spotify track, reschedule cutoff
+            if (state.isPlaying && state.isSpotifyTrack) {
+                // compute remaining based on played so far
+                let played = state.spotifyClipPlayedMs || 0;
+                if (state.spotifyClipStartTime) {
+                    played += (Date.now() - state.spotifyClipStartTime);
+                }
+                const clipMs = Math.max(0, state.sectionClipSeconds * 1000);
+                const remaining = Math.max(0, clipMs - played);
+                if (state.spotifyClipTimeoutId) clearTimeout(state.spotifyClipTimeoutId);
+                if (remaining > 0) {
+                    state.spotifyClipStartTime = Date.now();
+                    state.spotifyClipPlayedMs = 0; // restart accounting from now
+                    state.spotifyClipTimeoutId = setTimeout(() => {
+                        dbg('Section clip reached (changed) – advancing');
+                        state.spotifyClipTimeoutId = null;
+                        state.spotifyClipStartTime = 0;
+                        state.spotifyClipPlayedMs = 0;
+                        playNext();
+                    }, remaining);
+                } else {
+                    // If no remaining, advance immediately
+                    playNext();
+                }
+            }
+        };
+        // Initialize from current value
+        applySectionDuration();
+        // Update on change
+        sectionDurationSelect.addEventListener('change', applySectionDuration);
     }
 });

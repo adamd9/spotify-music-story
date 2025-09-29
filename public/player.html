@@ -25,9 +25,18 @@
                         <div class="doc-form">
                             <input type="text" id="doc-topic" placeholder="e.g. The Beatles early years">
                             <textarea id="doc-prompt" placeholder="Optional: add extra instructions (tone, eras to focus, regions, etc.)"></textarea>
+                            <div class="field-row" style="gap:8px; align-items:center;">
+                                <label for="section-duration" class="doc-label" style="min-width: 160px;">Narration segment length</label>
+                                <select id="section-duration" class="" style="min-width: 180px;">
+                                    <option value="30" selected>30 seconds (default)</option>
+                                    <option value="60">1 minute</option>
+                                    <option value="180">3 minutes</option>
+                                    <option value="300">5 minutes</option>
+                                </select>
+                            </div>
                             <div class="field-row">
-                                <button id="generate-doc" class="btn btn-secondary">Generate Outline</button>
-                                <button id="import-open-btn" class="btn">Import by ID</button>
+                                <button id="generate-doc" class="btn btn-primary">Generate Outline</button>
+                                <button id="import-open-btn" class="btn btn-secondary">Import by ID</button>
                                 <div id="doc-spinner" class="spinner hidden">
                                     <span class="ring"></span>
                                     <span>Generating outline…</span>

@@ -418,7 +418,8 @@ header p {
 
 /* Themed compact inputs */
 .section input[type="text"],
-.section textarea {
+.section textarea,
+.section select {
     width: 100%;
     background: #1b1b1b;
     color: var(--text-primary);
@@ -433,7 +434,8 @@ header p {
 }
 
 .section input[type="text"]:focus,
-.section textarea:focus {
+.section textarea:focus,
+.section select:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(29,185,84,0.15);

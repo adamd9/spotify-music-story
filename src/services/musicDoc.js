@@ -2,7 +2,7 @@ const openai = require('./openaiClient');
 const { dbg, truncate } = require('../utils/logger');
 const { loadTemplate, fillTemplate } = require('../utils/promptLoader');
 
-async function generateMusicDoc({ topic, prompt, catalog }) {
+async function generateMusicDoc({ topic, prompt, catalog, narrationTargetSecs }) {
   // Single interleaved timeline schema
   const schema = {
     type: 'object',
@@ -51,10 +51,12 @@ async function generateMusicDoc({ topic, prompt, catalog }) {
     catalogNote = `\n\nCandidate track catalog (MUST choose ONLY from these if selecting songs):\n${JSON.stringify(trimmed, null, 2)}`;
   }
 
+  const targetSecs = Number.isFinite(narrationTargetSecs) && narrationTargetSecs > 0 ? Math.floor(narrationTargetSecs) : 30;
   const userPrompt = fillTemplate(userTpl, {
     TOPIC: topic,
     EXTRA: (extra || '').trim(),
-    CATALOG_NOTE: (catalogNote || '').trim()
+    CATALOG_NOTE: (catalogNote || '').trim(),
+    NARRATION_TARGET_SECS: String(targetSecs)
   });
 
   dbg('music-doc: request', {

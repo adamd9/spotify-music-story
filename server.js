@@ -347,7 +347,7 @@ app.post('/api/music-doc', async (req, res) => {
       return res.status(500).json({ error: 'OPENAI_API_KEY is not configured on the server.' });
     }
 
-    const { topic, prompt, catalog } = req.body || {};
+    const { topic, prompt, catalog, narrationTargetSecs } = req.body || {};
     if (!topic || typeof topic !== 'string') {
       return res.status(400).json({ error: 'Missing required field: topic (string)' });
     }
@@ -403,6 +403,8 @@ app.post('/api/music-doc', async (req, res) => {
     const extra = prompt && typeof prompt === 'string' && prompt.trim().length > 0
       ? `\n\nAdditional instructions from user (apply carefully):\n${prompt.trim()}`
       : '';
+    const targetSecs = Number.isFinite(narrationTargetSecs) && narrationTargetSecs > 0 ? Math.floor(narrationTargetSecs) : 30;
+    const timingNote = `\n\nTiming preference (strictly follow):\n- The user wants each narration segment to be approximately ${targetSecs} seconds of spoken content.\n- Keep narration concise but sufficiently detailed; adjust sentence count to match the target time.\n- Aim within ±10% of the target per segment; split or tighten phrasing as needed while preserving clarity and chronology.`;
     let catalogNote = '';
     if (Array.isArray(catalog) && catalog.length > 0) {
       // Keep only fields the model needs
@@ -410,7 +412,7 @@ app.post('/api/music-doc', async (req, res) => {
       catalogNote = `\n\nCandidate track catalog (MUST choose ONLY from these if selecting songs):\n${JSON.stringify(trimmed, null, 2)}`;
     }
 
-    const userPrompt = `Topic: ${topic}\n\nGoals:\n- Provide a brief summary.\n- Pick exactly 5 songs that represent the topic narrative.\n- Create narration segments that reference songs and can be placed between songs.\n- Build a single interleaved timeline array mixing narration and songs.\n- If a catalog is provided, select songs only from it and include track_id and track_uri.\n\nIMPORTANT: Return ONLY a single raw JSON object that validates against the provided JSON Schema. Do NOT include any extra commentary or formatting.\n${extra}${catalogNote}`;
+    const userPrompt = `Topic: ${topic}\n\nGoals:\n- Provide a brief summary.\n- Pick exactly 5 songs that represent the topic narrative.\n- Create narration segments that reference songs and can be placed between songs.\n- Build a single interleaved timeline array mixing narration and songs.\n- If a catalog is provided, select songs only from it and include track_id and track_uri.\n\nIMPORTANT: Return ONLY a single raw JSON object that validates against the provided JSON Schema. Do NOT include any extra commentary or formatting.\n${timingNote}${extra}${catalogNote}`;
 
     dbg('music-doc: request', {
       model: 'gpt-5-mini',
