@@ -180,7 +180,10 @@ const state = {
     accessToken: null,
     deviceId: null,
     isInitialized: false,
-    isAdPlaying: false
+    isAdPlaying: false,
+    isGeneratingDoc: false,
+    startedTrackIndex: -1,
+    loadedPlaylistId: null
 };
 
 // DOM Elements
@@ -1166,6 +1169,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadIdBtn.addEventListener('click', async () => {
             const id = (loadIdInput.value || '').trim();
             if (!id) return;
+            // Guard: don't reload if we already loaded this exact playlist id
+            if (state.loadedPlaylistId && state.loadedPlaylistId === id) {
+                dbg('load-by-id: skipping reload of same id', { id });
+                return;
+            }
             try {
                 if (docStatusEl) docStatusEl.textContent = 'Loading playlist…';
                 if (docRawDetails) { docRawDetails.classList.add('hidden'); docRawDetails.open = false; }
@@ -1202,6 +1210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (docRawDetails) docRawDetails.classList.remove('hidden');
                 } catch {}
                 buildPlaylistFromDoc(pl);
+                state.loadedPlaylistId = id;
             } catch (e) {
                 console.error('load by id error', e);
                 if (docStatusEl) docStatusEl.textContent = 'Playlist not found.';
@@ -1226,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch {}
 
-    // If no explicit playlistId, load initial playlist from server policy
+    // If no explicit playlistId, load initial playlist from server policy (build directly)
     try {
         const params = new URLSearchParams(window.location.search);
         const pid = params.get('playlistId');
@@ -1235,7 +1244,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (r.ok) {
                 const json = await r.json();
                 const initId = json?.id || (json?.playlist && json.playlist.id);
-                if (initId && loadIdInput && loadIdBtn) {
+                const pl = json?.playlist;
+                if (pl && Array.isArray(pl.timeline)) {
+                    // Update status/meta and build
+                    try {
+                        const items = Array.isArray(pl.timeline) ? pl.timeline : [];
+                        const songs = items.filter(x => x && x.type === 'song').length;
+                        const narr = items.filter(x => x && x.type === 'narration').length;
+                        const title = pl?.title || (pl?.topic ? `Music history: ${pl.topic}` : 'Music history');
+                        if (docStatusEl) docStatusEl.textContent = `Loaded: ${title} — ${songs} songs, ${narr} narration segments.`;
+                    } catch {}
+                    try {
+                        if (docTitleDisplay) docTitleDisplay.textContent = pl?.title || '-';
+                        if (docTopicDisplay) docTopicDisplay.textContent = pl?.topic || '-';
+                        if (docSummaryDisplay) docSummaryDisplay.textContent = pl?.summary || '-';
+                    } catch {}
+                    try {
+                        if (docOutputEl) docOutputEl.textContent = JSON.stringify(pl, null, 2);
+                        if (docRawDetails) docRawDetails.classList.remove('hidden');
+                    } catch {}
+                    buildPlaylistFromDoc(pl);
+                    if (initId) state.loadedPlaylistId = initId;
+                    // Optionally update URL for shareability
+                    try { if (initId) window.history.replaceState({}, '', `?playlistId=${encodeURIComponent(initId)}`); } catch {}
+                } else if (initId && loadIdInput && loadIdBtn) {
+                    // Fallback: load by id if server didn't include playlist data
                     loadIdInput.value = initId;
                     loadIdBtn.click();
                 }
