@@ -799,8 +799,6 @@ async function playSpotifyTrack(track) {
 async function playLocalMP3(track) {
     try {
         state.isSpotifyTrack = false;
-        // Clear clip timer when switching to local MP3
-        clearSpotifyClipTimer();
         // Pause Spotify if currently playing
         if (state.spotifyPlayer) {
             try { state.spotifyPlayer.pause(); } catch (_) {}
