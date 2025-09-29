@@ -1,0 +1,91 @@
+{
+  "id": "0vz2mkarftsamg4aqnov",
+  "ownerId": "funa7e0koc6dbd7kp1e7q2j1p",
+  "title": "Nine Inch Nails — The First Five Years",
+  "topic": "nine in nails first 5 years",
+  "summary": "A concise audio documentary tracing Nine Inch Nails' emergence and early impact through five defining songs and short narration segments. Highlights the band's raw industrial beginnings, breakthrough singles, and the darker introspection that cemented their influence.",
+  "timeline": [
+    {
+      "type": "narration",
+      "text": "Nine Inch Nails began as Trent Reznor's solitary project in the late 1980s, channeling industrial noise into catchy, confrontational songs. We'll start where the sound first coalesced and a generation took notice.",
+      "tts_url": "/tts/tts_0vz2mkarftsamg4aqnov_0.mp3"
+    },
+    {
+      "type": "song",
+      "title": "Head Like A Hole",
+      "artist": "Nine Inch Nails",
+      "album": "Pretty Hate Machine",
+      "year": "1989",
+      "spotify_query": "Head Like A Hole artist:Nine Inch Nails",
+      "track_id": "3ckd4YA4LcD3j50rfIVwUe",
+      "track_uri": "spotify:track:3ckd4YA4LcD3j50rfIVwUe"
+    },
+    {
+      "type": "narration",
+      "text": "From the debut album, 'Head Like A Hole' fused pop hooks with industrial aggression. It announced Reznor's knack for turning personal rage into radio-ready anthems and became a live centerpiece.",
+      "tts_url": "/tts/tts_0vz2mkarftsamg4aqnov_1.mp3"
+    },
+    {
+      "type": "song",
+      "title": "Closer",
+      "artist": "Nine Inch Nails",
+      "album": "The Downward Spiral (Deluxe Edition)",
+      "year": "1994",
+      "spotify_query": "Closer artist:Nine Inch Nails",
+      "track_id": "5mc6EyF1OIEOhAkD0Gg9Lc",
+      "track_uri": "spotify:track:5mc6EyF1OIEOhAkD0Gg9Lc"
+    },
+    {
+      "type": "narration",
+      "text": "By the mid-1990s, Nine Inch Nails had grown darker and more cinematic. 'Closer' shocked and fascinated with its explicit lyrics and layered production, marking a commercial peak and cultural conversation.",
+      "tts_url": "/tts/tts_0vz2mkarftsamg4aqnov_2.mp3"
+    },
+    {
+      "type": "song",
+      "title": "March Of The Pigs",
+      "artist": "Nine Inch Nails",
+      "album": "The Downward Spiral",
+      "year": "1994",
+      "spotify_query": "March Of The Pigs artist:Nine Inch Nails",
+      "track_id": "56NATwQKP7m64hFLFlKzXe",
+      "track_uri": "spotify:track:56NATwQKP7m64hFLFlKzXe"
+    },
+    {
+      "type": "narration",
+      "text": "Also from The Downward Spiral, 'March Of The Pigs' showcased jagged tempos and violent urgency. It captured the album's sense of collapse and the band's willingness to push abrasive dynamics into the mainstream.",
+      "tts_url": "/tts/tts_0vz2mkarftsamg4aqnov_3.mp3"
+    },
+    {
+      "type": "song",
+      "title": "Hurt",
+      "artist": "Nine Inch Nails",
+      "album": "The Downward Spiral",
+      "year": "1994",
+      "spotify_query": "Hurt artist:Nine Inch Nails",
+      "track_id": "27tX58NOpv1YKQ0abW7EPy",
+      "track_uri": "spotify:track:27tX58NOpv1YKQ0abW7EPy"
+    },
+    {
+      "type": "narration",
+      "text": "'Hurt' closed The Downward Spiral with fragile reflection and aching melody. Its plainspoken confession broadened the band's emotional range and later became one of the most reinterpreted songs in their catalog.",
+      "tts_url": "/tts/tts_0vz2mkarftsamg4aqnov_4.mp3"
+    },
+    {
+      "type": "song",
+      "title": "The Hand That Feeds",
+      "artist": "Nine Inch Nails",
+      "album": "With Teeth (Bonus Tracks)",
+      "year": "2005",
+      "spotify_query": "The Hand That Feeds artist:Nine Inch Nails",
+      "track_id": "4L5r9XNiWJ7cbqcIiNvVes",
+      "track_uri": "spotify:track:4L5r9XNiWJ7cbqcIiNvVes"
+    },
+    {
+      "type": "narration",
+      "text": "While slightly beyond the first five years chronologically, 'The Hand That Feeds' represents how the band's early approach evolved into tighter, more direct rock songs. It reflects the enduring influence of those formative records on later NIN work.",
+      "tts_url": "/tts/tts_0vz2mkarftsamg4aqnov_5.mp3"
+    }
+  ],
+  "createdAt": "2025-09-28T22:53:52.111Z",
+  "updatedAt": "2025-09-28T22:54:07.992Z"
+}
