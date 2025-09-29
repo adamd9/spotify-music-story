@@ -17,6 +17,7 @@ Structural goals:
 - BEFORE EACH SONG, include a narration segment that:
   - Introduces the song (title and year) and that it is about to play.
   - Provides concise historical context: what was happening with the band/scene/production at that moment and why the track matters.
+  - Delves into the production and recording process of the song, along with any interesting production details or anecdotes.
 
 Timing preference (strictly follow):
 - The user wants each narration segment to be approximately {{NARRATION_TARGET_SECS}} seconds of spoken content.

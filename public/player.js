@@ -685,8 +685,7 @@ function preloadTrackDurations() {
 async function playTrack(index) {
     if (index < 0 || index >= state.playlist.length) return;
     
-    // Clear clip timer when changing tracks
-    clearSpotifyClipTimer();
+    // No section-based clipping; timers are not used
 
     state.currentTrackIndex = index;
     state.currentTrack = state.playlist[index];
@@ -730,10 +729,7 @@ async function playSpotifyTrack(track) {
             try { narrationAudio.onended = null; } catch (_) {}
             try { narrationAudio.pause(); } catch (_) {}
         }
-        // Mark source as Spotify
         state.isSpotifyTrack = true;
-        // Reset clip timer tracking for new Spotify track
-        clearSpotifyClipTimer();
         
         // Resolve track URI via Spotify Search if not provided
         let trackUri = track.id && track.id.startsWith('spotify:track:') ? track.id : null;
@@ -792,22 +788,6 @@ async function playSpotifyTrack(track) {
             
             state.isPlaying = true;
             updatePlayPauseButton();
-
-            // Schedule section clip cutoff if configured
-            try {
-                const clipMs = Math.max(0, (state.sectionClipSeconds || 30) * 1000);
-                if (clipMs > 0) {
-                    state.spotifyClipStartTime = Date.now();
-                    if (state.spotifyClipTimeoutId) clearTimeout(state.spotifyClipTimeoutId);
-                    state.spotifyClipTimeoutId = setTimeout(() => {
-                        dbg('Section clip reached – advancing');
-                        state.spotifyClipTimeoutId = null;
-                        state.spotifyClipStartTime = 0;
-                        state.spotifyClipPlayedMs = 0;
-                        playNext();
-                    }, clipMs);
-                }
-            } catch {}
         });
     } catch (error) {
         console.error('Error playing Spotify track:', error);
@@ -888,15 +868,6 @@ function togglePlayPause() {
         if (state.isSpotifyTrack) {
             dbg('toggle pause: Spotify');
             state.spotifyPlayer.pause();
-            // Stop clip timer and accumulate played time
-            if (state.spotifyClipTimeoutId) {
-                clearTimeout(state.spotifyClipTimeoutId);
-                state.spotifyClipTimeoutId = null;
-            }
-            if (state.spotifyClipStartTime) {
-                state.spotifyClipPlayedMs += (Date.now() - state.spotifyClipStartTime);
-                state.spotifyClipStartTime = 0;
-            }
         } else if (narrationAudio) {
             // Pause local audio element
             dbg('toggle pause: local MP3 (element)');
@@ -908,22 +879,6 @@ function togglePlayPause() {
         if (state.isSpotifyTrack) {
             dbg('toggle resume: Spotify');
             state.spotifyPlayer.resume();
-            // Resume clip timer for remaining time
-            try {
-                const clipMs = Math.max(0, (state.sectionClipSeconds || 30) * 1000);
-                const remaining = Math.max(0, clipMs - (state.spotifyClipPlayedMs || 0));
-                if (remaining > 0) {
-                    state.spotifyClipStartTime = Date.now();
-                    if (state.spotifyClipTimeoutId) clearTimeout(state.spotifyClipTimeoutId);
-                    state.spotifyClipTimeoutId = setTimeout(() => {
-                        dbg('Section clip reached (resume) – advancing');
-                        state.spotifyClipTimeoutId = null;
-                        state.spotifyClipStartTime = 0;
-                        state.spotifyClipPlayedMs = 0;
-                        playNext();
-                    }, remaining);
-                }
-            } catch {}
         } else {
             // Resume local audio element
             if (narrationAudio && narrationAudio.src) {
@@ -940,15 +895,7 @@ function togglePlayPause() {
     updatePlayPauseButton();
 }
 
-// Clear any pending Spotify section-clip timer
-function clearSpotifyClipTimer() {
-    if (state.spotifyClipTimeoutId) {
-        clearTimeout(state.spotifyClipTimeoutId);
-        state.spotifyClipTimeoutId = null;
-    }
-    state.spotifyClipStartTime = 0;
-    state.spotifyClipPlayedMs = 0;
-}
+// No section-based clipping timers are used for Spotify playback
 
 // Resume local audio at a given offset in seconds
 function resumeLocalAt(offsetSeconds) {
