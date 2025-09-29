@@ -74,17 +74,50 @@ async function refreshMyPlaylists() {
         return;
     }
     try {
-        const r = await fetch(`/api/users/${encodeURIComponent(ownerId)}/playlists`);
-        if (!r.ok) throw new Error('Fetch failed');
-        const json = await r.json();
-        const list = Array.isArray(json?.playlists) ? json.playlists : [];
+        // Fetch both completed playlists and active jobs
+        const [playlistsResp, jobsResp] = await Promise.all([
+            fetch(`/api/users/${encodeURIComponent(ownerId)}/playlists`),
+            fetch(`/api/users/${encodeURIComponent(ownerId)}/jobs`)
+        ]);
+        
+        const playlistsJson = playlistsResp.ok ? await playlistsResp.json() : { playlists: [] };
+        const jobsJson = jobsResp.ok ? await jobsResp.json() : { jobs: [] };
+        
+        const playlists = Array.isArray(playlistsJson?.playlists) ? playlistsJson.playlists : [];
+        const jobs = Array.isArray(jobsJson?.jobs) ? jobsJson.jobs : [];
+        
+        // Filter active jobs (pending or running)
+        const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'running');
+        
         if (myPlaylistsList) myPlaylistsList.innerHTML = '';
-        if (!list.length) {
+        
+        if (!playlists.length && !activeJobs.length) {
             if (myPlaylistsEmpty) myPlaylistsEmpty.classList.remove('hidden');
             return;
         }
+        
         if (myPlaylistsEmpty) myPlaylistsEmpty.classList.add('hidden');
-        list.forEach((rec, idx) => {
+        
+        // Show active jobs first
+        activeJobs.forEach(job => {
+            const li = document.createElement('li');
+            const topic = job.params?.topic || '(generating)';
+            const statusBadge = job.status === 'running' 
+                ? `<span class="badge badge-running">⏳ ${Math.round(job.progress || 0)}%</span>`
+                : `<span class="badge badge-pending">⏸ Queued</span>`;
+            
+            li.innerHTML = `
+                <div class="saved-item job-item">
+                    <button class="saved-title job-link" data-job-id="${job.id}" title="Reconnect to job">
+                        ${topic} ${statusBadge}
+                        <span class="saved-meta job-status">${job.stageLabel || 'Starting...'}</span>
+                    </button>
+                </div>`;
+            myPlaylistsList.appendChild(li);
+        });
+        
+        // Show completed playlists
+        playlists.forEach(rec => {
             const li = document.createElement('li');
             const title = rec.title || '(untitled)';
             const meta = rec.topic ? `(<span class="saved-meta-topic">${rec.topic}</span>)` : '';
@@ -96,7 +129,8 @@ async function refreshMyPlaylists() {
                 </div>`;
             myPlaylistsList.appendChild(li);
         });
-        // Attach events: click title to load
+        
+        // Attach events: click title to load playlist
         myPlaylistsList.querySelectorAll('.saved-title.as-link[data-id]').forEach(el => {
             el.addEventListener('click', async () => {
                 const id = el.getAttribute('data-id');
@@ -104,6 +138,15 @@ async function refreshMyPlaylists() {
                 if (loadIdBtn) loadIdBtn.click();
             });
         });
+        
+        // Attach events: click job to reconnect
+        myPlaylistsList.querySelectorAll('.saved-title.job-link[data-job-id]').forEach(el => {
+            el.addEventListener('click', () => {
+                const jobId = el.getAttribute('data-job-id');
+                reconnectToJob(jobId);
+            });
+        });
+        
     } catch (e) {
         console.error('refreshMyPlaylists error', e);
         if (myPlaylistsEmpty) {
@@ -281,6 +324,7 @@ const myPlaylistsList = document.getElementById('my-playlists-list');
 const myPlaylistsEmpty = document.getElementById('my-playlists-empty');
 const refreshMyPlaylistsBtn = document.getElementById('refresh-my-playlists');
 const docSpinner = document.getElementById('doc-spinner');
+const docSpinnerText = document.getElementById('doc-spinner-text');
 const docStatusEl = document.getElementById('doc-status');
 const docRawDetails = document.getElementById('doc-raw');
 // Doc meta fields in player UI
@@ -1121,6 +1165,108 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // Reconnect to an existing job (for page refresh or clicking pending job)
+    function reconnectToJob(jobId) {
+        dbg('Reconnecting to job', { jobId });
+        
+        // Show spinner
+        try { if (docSpinner) docSpinner.classList.remove('hidden'); } catch {}
+        try { if (generateDocBtn) generateDocBtn.disabled = true; } catch {}
+        state.isGeneratingDoc = true;
+        
+        // Connect to job stream
+        connectToJobStream(jobId);
+    }
+    
+    // Connect to SSE stream for a job
+    function connectToJobStream(jobId) {
+        const eventSource = new EventSource(`/api/jobs/${jobId}/stream`);
+        
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                dbg('SSE event', data);
+                
+                if (data.type === 'init' || data.type === 'progress') {
+                    // Update status with detailed progress
+                    const statusText = `${data.stageLabel}${data.detail ? ': ' + data.detail : ''} (${Math.round(data.progress)}%)`;
+                    if (docStatusEl) docStatusEl.textContent = statusText;
+                    if (docSpinnerText) docSpinnerText.textContent = statusText;
+                    
+                    // Update My Playlists to show progress
+                    refreshMyPlaylists().catch(() => {});
+                } else if (data.type === 'complete') {
+                    eventSource.close();
+                    dbg('Job complete', data.result);
+                    handleJobComplete(data.result);
+                } else if (data.type === 'error') {
+                    eventSource.close();
+                    if (docStatusEl) docStatusEl.textContent = `Job failed: ${data.error}`;
+                    try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
+                    try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
+                    state.isGeneratingDoc = false;
+                    refreshMyPlaylists().catch(() => {});
+                }
+            } catch (err) {
+                console.error('SSE parse error', err);
+            }
+        };
+        
+        eventSource.onerror = (err) => {
+            console.error('SSE error', err);
+            eventSource.close();
+            if (docStatusEl) docStatusEl.textContent = 'Connection error. Check "My Playlists" for result.';
+            try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
+            try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
+            state.isGeneratingDoc = false;
+        };
+    }
+    
+    // Handle job completion
+    async function handleJobComplete(result) {
+        try {
+            const drafted = result?.data;
+            const playlistId = result?.playlistId;
+            
+            if (!drafted || !playlistId) {
+                throw new Error('Invalid job result');
+            }
+            
+            try { 
+                if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…';
+                if (docSpinnerText) docSpinnerText.textContent = 'Generating narration tracks…';
+            } catch {}
+            const withTTS = await generateTTSForDoc(drafted, playlistId);
+            
+            // Update playlist with TTS URLs
+            await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: withTTS.title || drafted.title,
+                    topic: withTTS.topic || drafted.topic,
+                    summary: withTTS.summary || drafted.summary,
+                    timeline: withTTS.timeline
+                })
+            });
+            
+            if (saveStatusEl) {
+                const shareUrl = `${window.location.origin}/player.html?playlistId=${playlistId}`;
+                saveStatusEl.textContent = `Saved as: ${withTTS.title || drafted.title || 'Music history'} — Share ID: ${playlistId} — ${shareUrl}`;
+            }
+            
+            try { await refreshMyPlaylists(); } catch {}
+            buildFromDoc(withTTS);
+        } catch (err) {
+            console.error('TTS generation failed', err);
+            if (docStatusEl) docStatusEl.textContent = 'Documentary created but TTS failed. Check "My Playlists".';
+        } finally {
+            try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
+            try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
+            state.isGeneratingDoc = false;
+        }
+    }
+
     // Documentary generator (two-stage flow when Spotify token is available)
     async function handleGenerateDocClick() {
         if (state.isGeneratingDoc) {
@@ -1174,9 +1320,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Spotify login required. Please log in to generate documentaries.');
             }
 
-            // Multi-stage workflow: plan → search → generate
             const ownerId = await fetchSpotifyUserId();
-            try { if (docStatusEl) docStatusEl.textContent = 'Planning documentary…'; } catch {}
+            
+            // Create job and get jobId
+            try { 
+                if (docStatusEl) docStatusEl.textContent = 'Starting documentary generation...';
+                if (docSpinnerText) docSpinnerText.textContent = 'Starting documentary generation...';
+            } catch {}
             
             const docResp = await fetch('/api/music-doc', {
                 method: 'POST',
@@ -1192,46 +1342,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             if (!docResp.ok) {
                 const errText = await docResp.text().catch(() => '');
-                throw new Error(`Documentary generation failed: ${docResp.status} ${errText}`);
+                throw new Error(`Failed to start job: ${docResp.status} ${errText}`);
             }
             
-            const docJson = await docResp.json();
-            const drafted = docJson?.data;
-            const playlistId = docJson?.playlistId;
-            try { if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…'; } catch {}
-            const withTTS = await generateTTSForDoc(drafted, playlistId);
-            if (playlistId) {
-                await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        title: withTTS.title || drafted.title,
-                        topic: withTTS.topic || drafted.topic,
-                        summary: withTTS.summary || drafted.summary,
-                        timeline: withTTS.timeline
-                    })
-                });
-                if (saveStatusEl) {
-                    const shareUrl = `${window.location.origin}/player.html?playlistId=${playlistId}`;
-                    saveStatusEl.textContent = `Saved as: ${withTTS.title || drafted.title || 'Music history'} — Share ID: ${playlistId} — ${shareUrl}`;
-                }
-                try { await refreshMyPlaylists(); } catch {}
-            } else {
-                // Persist new playlist if none was created server-side
-                const ownerId2 = (await fetchSpotifyUserId()) || 'anonymous';
-                const saved = await saveGeneratedPlaylist(withTTS, ownerId2);
-                if (saved && saveStatusEl) {
-                    const shareUrl = `${window.location.origin}/player.html?playlistId=${saved.id}`;
-                    saveStatusEl.textContent = `Saved as: ${saved.title || 'Music history'} — Share ID: ${saved.id} — ${shareUrl}`;
-                    try { await refreshMyPlaylists(); } catch {}
-                }
-            }
-            buildFromDoc(withTTS);
+            const { jobId } = await docResp.json();
+            dbg('Job created', { jobId });
+            
+            // Refresh My Playlists to show the new job
+            try { await refreshMyPlaylists(); } catch {}
+            
+            // Connect to SSE stream for progress updates
+            connectToJobStream(jobId);
+            
         } catch (err) {
             console.error('doc gen failed', err);
-            if (docStatusEl) docStatusEl.textContent = 'Generation failed. Please try again.';
-        } finally {
-            // UI: hide spinner and enable button
+            if (docStatusEl) docStatusEl.textContent = `Generation failed: ${err.message}`;
             try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
             try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
             state.isGeneratingDoc = false;

@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const spotifyRoutes = require('./routes/spotify');
 const ttsRoutes = require('./routes/tts');
 const musicDocRoutes = require('./routes/musicDoc');
+const jobsRoutes = require('./routes/jobs');
 const playlistsRoutes = require('./routes/playlists');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use(authRoutes);
 app.use(spotifyRoutes);
 app.use(ttsRoutes);
 app.use(musicDocRoutes);
+app.use(jobsRoutes);
 app.use(playlistsRoutes);
 
 // Health

@@ -6,11 +6,12 @@ const { planMusicDocumentary } = require('../services/musicPlan');
 const { searchSpecificTracks } = require('../services/trackSearch');
 const { generateMusicDoc } = require('../services/musicDoc');
 const { savePlaylist } = require('../services/storage');
-const jobManager = require('../services/jobManager');
 
 /**
- * Multi-stage music documentary generation with job management
- * Returns immediately with jobId, client subscribes to SSE for progress
+ * Multi-stage music documentary generation:
+ * 1. Plan: LLM creates documentary outline with specific track requirements
+ * 2. Search: Find those specific tracks on Spotify + fetch broader catalog
+ * 3. Generate: LLM creates final timeline with actual available tracks
  */
 router.post('/api/music-doc', async (req, res) => {
   try {
@@ -28,81 +29,30 @@ router.post('/api/music-doc', async (req, res) => {
       return res.status(400).json({ error: 'Missing required field: accessToken (string) - needed for Spotify track search' });
     }
 
-    if (!ownerId || typeof ownerId !== 'string') {
-      return res.status(400).json({ error: 'Missing required field: ownerId (string) - needed for job management' });
-    }
+    dbg('music-doc-v2: start', { topic, ownerId: ownerId ? 'yes' : 'no', narrationTargetSecs });
 
-    // Create job
-    let job;
-    try {
-      job = jobManager.createJob(ownerId, {
-        topic,
-        prompt,
-        accessToken,
-        narrationTargetSecs,
-        market,
-      });
-    } catch (err) {
-      return res.status(429).json({ error: err.message });
-    }
-
-    // Return job ID immediately
-    res.json({ ok: true, jobId: job.id });
-
-    // Start async processing
-    processDocumentaryJob(job).catch(err => {
-      console.error('Job processing error:', err);
-      jobManager.failJob(job.id, err);
-    });
-
-  } catch (err) {
-    console.error('music-doc error', err);
-    return res.status(500).json({ error: 'Failed to create documentary job', details: err.message });
-  }
-});
-
-/**
- * Async job processing function
- */
-async function processDocumentaryJob(job) {
-  const { topic, prompt, accessToken, narrationTargetSecs, market } = job.params;
-  const baseUrl = `http://localhost:${config.port}`; // Internal requests
-
-  try {
-    job.status = 'running';
-    jobManager.updateProgress(job.id, {
-      stage: 1,
-      stageLabel: 'Identifying artist',
-      progress: 10,
-      detail: `Searching for "${topic}"`,
-    });
-
-    // STAGE 1: Identify artist
-    const identifyResp = await fetch(`${baseUrl}/api/identify-artist`, {
+    // STAGE 1: Get artist info and top tracks for context
+    dbg('music-doc-v2: stage 1 - identify artist');
+    const identifyResp = await fetch(`${req.protocol}://${req.get('host')}/api/identify-artist`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: topic, accessToken })
     });
     
     if (!identifyResp.ok) {
-      throw new Error('Failed to identify artist');
+      return res.status(identifyResp.status).json({ error: 'Failed to identify artist' });
     }
     
     const identifyData = await identifyResp.json();
     const artist = identifyData.artist;
     
     if (!artist || !artist.id) {
-      throw new Error('Artist not found');
+      return res.status(404).json({ error: 'Artist not found' });
     }
 
-    jobManager.updateProgress(job.id, {
-      stage: 1,
-      stageLabel: 'Artist identified',
-      progress: 15,
-      detail: `Found: ${artist.name}`,
-    });
+    dbg('music-doc-v2: identified artist', { name: artist.name, id: artist.id });
 
-    // Get top tracks for context
+    // Get top tracks for planning context
     const topTracksUrl = `https://api.spotify.com/v1/artists/${artist.id}/top-tracks?market=${market}`;
     const topTracksResp = await fetch(topTracksUrl, {
       headers: { Authorization: `Bearer ${accessToken}` }
@@ -116,86 +66,60 @@ async function processDocumentaryJob(job) {
       duration_ms: t.duration_ms
     }));
 
-    jobManager.updateProgress(job.id, {
-      stage: 1,
-      stageLabel: 'Top tracks fetched',
-      progress: 20,
-      detail: `${topTracks.length} popular tracks loaded`,
-    });
+    dbg('music-doc-v2: got top tracks', { count: topTracks.length });
 
-    // STAGE 2: Plan documentary
-    jobManager.updateProgress(job.id, {
-      stage: 2,
-      stageLabel: 'Planning documentary',
-      progress: 25,
-      detail: 'AI is creating narrative outline...',
-    });
-
+    // STAGE 2: Plan the documentary (LLM decides which tracks are essential)
+    dbg('music-doc-v2: stage 2 - plan documentary');
     const plan = await planMusicDocumentary(artist.name, topTracks, prompt);
     
-    jobManager.updateProgress(job.id, {
-      stage: 2,
-      stageLabel: 'Documentary planned',
-      progress: 35,
-      detail: `"${plan.title}" - ${plan.required_tracks?.length || 0} tracks selected`,
+    dbg('music-doc-v2: plan created', { 
+      title: plan.title,
+      era: plan.era_covered,
+      requiredTracks: plan.required_tracks?.length || 0
     });
 
-    // STAGE 3: Search for required tracks
-    jobManager.updateProgress(job.id, {
-      stage: 3,
-      stageLabel: 'Searching for tracks',
-      progress: 40,
-      detail: 'Finding specific tracks on Spotify...',
-    });
-
+    // STAGE 3: Search for the specific tracks the LLM requested
+    dbg('music-doc-v2: stage 3 - search for required tracks');
     const requiredTracks = plan.required_tracks || [];
     const searchResults = await searchSpecificTracks(requiredTracks, artist.name, accessToken, market);
     
     const foundTracks = searchResults.filter(r => r.found).map(r => r.found);
     const missingTracks = searchResults.filter(r => !r.found).map(r => r.requested);
     
-    jobManager.updateProgress(job.id, {
-      stage: 3,
-      stageLabel: 'Track search complete',
-      progress: 50,
-      detail: `Found ${foundTracks.length}/5 tracks`,
+    dbg('music-doc-v2: track search complete', { 
+      found: foundTracks.length, 
+      missing: missingTracks.length 
     });
 
-    // STAGE 4: Fetch backup catalog if needed
+    if (missingTracks.length > 0) {
+      dbg('music-doc-v2: missing tracks', { 
+        tracks: missingTracks.map(t => `${t.song_title} (${t.approximate_year})`) 
+      });
+    }
+
+    // STAGE 4: Fetch broader catalog as backup options (if we're missing tracks)
     let backupTracks = [];
     if (foundTracks.length < 5) {
-      jobManager.updateProgress(job.id, {
-        stage: 4,
-        stageLabel: 'Fetching backup catalog',
-        progress: 55,
-        detail: `${5 - foundTracks.length} tracks missing, loading alternatives...`,
-      });
-
-      const catalogResp = await fetch(`${baseUrl}/api/artist-tracks`, {
+      dbg('music-doc-v2: stage 4 - fetching backup tracks');
+      const catalogResp = await fetch(`${req.protocol}://${req.get('host')}/api/artist-tracks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           artistId: artist.id, 
           accessToken, 
           market,
-          desiredCount: 50
+          desiredCount: 50 // Smaller backup set
         })
       });
       
       if (catalogResp.ok) {
         const catalogData = await catalogResp.json();
         backupTracks = catalogData.tracks || [];
+        dbg('music-doc-v2: backup catalog fetched', { count: backupTracks.length });
       }
-
-      jobManager.updateProgress(job.id, {
-        stage: 4,
-        stageLabel: 'Backup catalog loaded',
-        progress: 60,
-        detail: `${backupTracks.length} additional tracks available`,
-      });
     }
 
-    // Combine tracks
+    // Combine found tracks + backup tracks, removing duplicates
     const allTracks = [...foundTracks];
     const trackIds = new Set(foundTracks.map(t => t.id));
     for (const t of backupTracks) {
@@ -205,14 +129,12 @@ async function processDocumentaryJob(job) {
       }
     }
 
-    // STAGE 5: Generate final documentary
-    jobManager.updateProgress(job.id, {
-      stage: 5,
-      stageLabel: 'Generating documentary',
-      progress: 65,
-      detail: 'AI is creating final timeline...',
-    });
+    dbg('music-doc-v2: combined catalog', { total: allTracks.length });
 
+    // STAGE 5: Generate final documentary with actual tracks
+    dbg('music-doc-v2: stage 5 - generate final documentary');
+    
+    // Build enhanced prompt that includes the plan
     const enhancedPrompt = `
 DOCUMENTARY PLAN (use this as your guide):
 Title: ${plan.title}
@@ -234,14 +156,7 @@ IMPORTANT: Follow the plan above. Use the required tracks if they are available 
       narrationTargetSecs 
     });
 
-    jobManager.updateProgress(job.id, {
-      stage: 5,
-      stageLabel: 'Timeline generated',
-      progress: 75,
-      detail: `${data.timeline?.length || 0} segments created`,
-    });
-
-    // Enrich timeline with duration_ms
+    // Enrich timeline with duration_ms from catalog
     let enrichedTimeline = Array.isArray(data.timeline) ? [...data.timeline] : [];
     try {
       if (allTracks.length > 0 && enrichedTimeline.length > 0) {
@@ -272,45 +187,33 @@ IMPORTANT: Follow the plan above. Use the required tracks if they are available 
       }
     } catch {}
 
-    // STAGE 6: Save playlist
-    jobManager.updateProgress(job.id, {
-      stage: 6,
-      stageLabel: 'Saving playlist',
-      progress: 85,
-      detail: 'Persisting documentary...',
-    });
-
+    // Save the playlist
     const record = await savePlaylist({
-      ownerId: job.userId,
+      ownerId: ownerId || 'anonymous',
       title: data.title || plan.title || `Music history: ${artist.name}`,
       topic: data.topic || artist.name,
       summary: data.summary || plan.narrative_arc || '',
       timeline: enrichedTimeline
     });
     
-    jobManager.updateProgress(job.id, {
-      stage: 6,
-      stageLabel: 'Playlist saved',
-      progress: 95,
-      detail: `Saved as "${record.title}"`,
-    });
-
-    // Complete job
-    jobManager.completeJob(job.id, {
-      data,
+    dbg('music-doc-v2: saved', { id: record.id, title: record.title });
+    
+    return res.json({ 
+      ok: true, 
+      data, 
       playlistId: record.id,
-      plan,
+      plan, // Include the plan in response for debugging
       trackSearchResults: {
         found: foundTracks.length,
         missing: missingTracks.length,
         backup: backupTracks.length
       }
     });
-
+    
   } catch (err) {
-    console.error('processDocumentaryJob error:', err);
-    jobManager.failJob(job.id, err);
+    console.error('music-doc-v2 error', err);
+    return res.status(500).json({ error: 'Failed to generate music documentary', details: err.message });
   }
-}
+});
 
 module.exports = router;
