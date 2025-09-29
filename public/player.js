@@ -318,6 +318,7 @@ function buildPlaylistFromDoc(doc) {
         state.currentTrackIndex = 0;
         state.currentTrack = state.playlist[0];
         state.isSpotifyTrack = state.currentTrack.type === 'spotify';
+        state.startedTrackIndex = -1; // nothing played yet
         renderPlaylist();
         updateNowPlaying({
             name: state.currentTrack.name,
@@ -580,6 +581,7 @@ async function playTrack(index) {
     state.currentTrackIndex = index;
     state.currentTrack = state.playlist[index];
     state.isSpotifyTrack = state.currentTrack.type === 'spotify';
+    state.startedTrackIndex = index;
     dbg('playTrack', { index, isSpotify: state.isSpotifyTrack, track: state.currentTrack });
     
     // Update UI
@@ -751,7 +753,11 @@ function togglePlayPause() {
         }
         state.isPlaying = false;
     } else {
-        if (state.isSpotifyTrack) {
+        // If the current selected track hasn't been started yet, start it now
+        if (state.startedTrackIndex !== state.currentTrackIndex) {
+            dbg('toggle play: starting current selection');
+            playTrack(state.currentTrackIndex);
+        } else if (state.currentTrack.type === 'spotify') {
             dbg('toggle resume: Spotify');
             state.spotifyPlayer.resume();
         } else {
