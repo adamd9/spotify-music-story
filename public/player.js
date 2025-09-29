@@ -1143,14 +1143,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         if (docStatusEl) docStatusEl.textContent = 'Generating outline…';
-        // Read narration target seconds (persisted alongside access token)
-        let narrationTargetSecs = 30;
-        try {
-            const storage = window.sessionStorage || window.localStorage;
-            const st = storage.getItem('narration_target_secs');
-            const n = parseInt(st, 10);
-            if (!isNaN(n) && n > 0) narrationTargetSecs = n;
-        } catch {}
+        // Read narration target seconds from state (already loaded from localStorage)
+        const narrationTargetSecs = state.sectionClipSeconds || 30;
 
         const buildFromDoc = (data) => {
             // Update concise status
@@ -1513,9 +1507,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const applySectionDuration = () => {
             const val = parseInt(sectionDurationSelect.value, 10);
             state.sectionClipSeconds = Number.isFinite(val) && val > 0 ? val : 30;
+            // Persist to localStorage
+            try {
+                const storage = window.sessionStorage || window.localStorage;
+                storage.setItem('narration_target_secs', state.sectionClipSeconds.toString());
+            } catch {}
             dbg('section duration set (prompt only)', { seconds: state.sectionClipSeconds });
         };
-        // Initialize from current value
+        // Initialize from localStorage or current value
+        try {
+            const storage = window.sessionStorage || window.localStorage;
+            const stored = storage.getItem('narration_target_secs');
+            const n = parseInt(stored, 10);
+            if (!isNaN(n) && n > 0) {
+                sectionDurationSelect.value = n.toString();
+            }
+        } catch {}
         applySectionDuration();
         // Update on change
         sectionDurationSelect.addEventListener('change', applySectionDuration);

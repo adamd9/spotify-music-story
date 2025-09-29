@@ -1,7 +1,7 @@
 Topic: {{TOPIC}}
 
 Narrative and style goals:
-- Write like a professional music journalist: vivid, precise, and informative. Keep segments TTS-friendly (2–5 sentences each).
+- Write like a professional music journalist: vivid, precise, and informative.
 - If provided, subtly adopt this persona and tone: {{STYLE}}.
 - Ensure the entire outline flows strictly in chronological order.
 

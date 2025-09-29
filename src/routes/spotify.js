@@ -16,8 +16,8 @@ router.post('/api/identify-artist', async (req, res) => {
     const norm = await normalizeArtistQuery(query);
     const normalized = (norm && norm.normalized) ? norm.normalized : query;
     const hint = (norm && norm.notes) ? norm.notes : '';
-    const q = hint ? `${normalized} ${hint}` : normalized;
-    const url = `https://api.spotify.com/v1/search?type=artist&limit=5&q=${encodeURIComponent(q)}`;
+    // Search only by normalized name (don't include hint/notes - too restrictive)
+    const url = `https://api.spotify.com/v1/search?type=artist&limit=1&q=${encodeURIComponent(normalized)}`;
     dbg('identify-artist: request', { original: query, normalized, hint, url, accessToken: safeToken(accessToken) });
     const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     dbg('identify-artist: response status', r.status);

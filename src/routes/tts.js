@@ -9,12 +9,20 @@ const router = express.Router();
 
 router.post('/api/tts-batch', async (req, res) => {
   try {
-    const { segments, playlistId } = req.body || {};
+    const { segments, playlistId, instructions } = req.body || {};
     if (!Array.isArray(segments) || segments.length === 0) {
       return res.status(400).json({ error: 'segments must be a non-empty array of { text }' });
     }
     await fsp.mkdir(config.paths.ttsOutputDir, { recursive: true });
-    dbg('tts-batch: start', { count: segments.length, model: config.openai.ttsModel, voice: config.openai.ttsVoice, outDir: config.paths.ttsOutputDir, mock: !!config.features?.mockTts, playlistId });
+    dbg('tts-batch: start', { 
+      count: segments.length, 
+      model: config.openai.ttsModel, 
+      voice: config.openai.ttsVoice, 
+      outDir: config.paths.ttsOutputDir, 
+      mock: !!config.features?.mockTts, 
+      playlistId,
+      customInstructions: !!instructions 
+    });
 
     // Mock mode: return a known local MP3 for each segment (no OpenAI call)
     if (config.features && config.features.mockTts) {
@@ -25,6 +33,13 @@ router.post('/api/tts-batch', async (req, res) => {
 
     const urls = [];
     const pid = (typeof playlistId === 'string' && playlistId) ? playlistId.replace(/[^a-zA-Z0-9_-]/g, '-') : null;
+    
+    // Prepare options object for TTS (optional custom instructions)
+    const ttsOptions = {};
+    if (instructions !== undefined) {
+      ttsOptions.instructions = instructions;
+    }
+    
     let idx = 0;
     for (const seg of segments) {
       const text = (seg && typeof seg.text === 'string') ? seg.text.trim() : '';
@@ -38,7 +53,7 @@ router.post('/api/tts-batch', async (req, res) => {
       const filePath = path.join(config.paths.ttsOutputDir, fileName);
       const publicUrl = `/tts/${fileName}`;
       try {
-        const buf = await ttsToMp3Buffer(text);
+        const buf = await ttsToMp3Buffer(text, ttsOptions);
         await fsp.writeFile(filePath, buf);
         urls.push(publicUrl);
         dbg('tts-batch: wrote file', { i: idx, url: publicUrl });
