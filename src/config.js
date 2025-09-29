@@ -1,15 +1,18 @@
 require('dotenv').config();
 const path = require('path');
 
+// Helper to sanitize and absolutize env paths (strip quotes/leading '=' and ensure absolute)
+function normalizePathEnv(val, fallback) {
+  if (!val) return fallback;
+  const cleaned = String(val).trim().replace(/^['"]|['"]$/g, '').replace(/^=+/, '');
+  return path.isAbsolute(cleaned) ? cleaned : path.resolve(cleaned);
+}
+
 // Compute runtime data directory (for Docker or local)
-const dataDir = process.env.RUNTIME_DATA_DIR
-  ? path.resolve(process.env.RUNTIME_DATA_DIR)
-  : path.join(__dirname, '..', 'data');
+const dataDir = normalizePathEnv(process.env.RUNTIME_DATA_DIR, path.join(__dirname, '..', 'data'));
 
 // Compute TTS output directory (defaults to a subfolder of dataDir)
-const ttsDir = process.env.TTS_OUTPUT_DIR
-  ? path.resolve(process.env.TTS_OUTPUT_DIR)
-  : path.join(dataDir, 'tts');
+const ttsDir = normalizePathEnv(process.env.TTS_OUTPUT_DIR, path.join(dataDir, 'tts'));
 
 const config = {
   env: process.env.NODE_ENV || 'development',
