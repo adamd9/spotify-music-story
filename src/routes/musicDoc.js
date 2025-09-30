@@ -291,13 +291,89 @@ IMPORTANT: Follow the plan above. Use the required tracks if they are available 
     jobManager.updateProgress(job.id, {
       stage: 6,
       stageLabel: 'Playlist saved',
-      progress: 95,
+      progress: 80,
       detail: `Saved as "${record.title}"`,
     });
 
+    // STAGE 7: Generate TTS narration
+    const narrationSegments = enrichedTimeline.filter(item => item && item.type === 'narration' && item.text);
+    const narrationCount = narrationSegments.length;
+    
+    if (narrationCount > 0) {
+      jobManager.updateProgress(job.id, {
+        stage: 7,
+        stageLabel: 'Generating narration',
+        progress: 85,
+        detail: `Preparing ${narrationCount} narration tracks...`,
+      });
+
+      // Generate TTS for each narration segment
+      const ttsSegments = narrationSegments.map(seg => ({ text: seg.text }));
+      
+      try {
+        // Call TTS batch endpoint with jobId for progress updates
+        const ttsResp = await fetch(`${baseUrl}/api/tts-batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            segments: ttsSegments, 
+            playlistId: record.id,
+            jobId: job.id
+          })
+        });
+
+        if (ttsResp.ok) {
+          const ttsData = await ttsResp.json();
+          const urls = ttsData.urls || [];
+          
+          // Attach TTS URLs to timeline
+          let urlIndex = 0;
+          enrichedTimeline = enrichedTimeline.map(item => {
+            if (item && item.type === 'narration' && item.text) {
+              const url = urls[urlIndex];
+              urlIndex++;
+              return { ...item, url };
+            }
+            return item;
+          });
+
+          // Update playlist with TTS URLs
+          await savePlaylist({
+            ownerId: job.userId,
+            title: data.title || plan.title || `Music history: ${artist.name}`,
+            topic: data.topic || artist.name,
+            summary: data.summary || plan.narrative_arc || '',
+            timeline: enrichedTimeline
+          });
+
+          jobManager.updateProgress(job.id, {
+            stage: 7,
+            stageLabel: 'Narration complete',
+            progress: 95,
+            detail: `Generated ${narrationCount} narration tracks`,
+          });
+        } else {
+          jobManager.updateProgress(job.id, {
+            stage: 7,
+            stageLabel: 'Narration skipped',
+            progress: 95,
+            detail: 'TTS generation failed, continuing...',
+          });
+        }
+      } catch (ttsErr) {
+        console.error('TTS generation error:', ttsErr);
+        jobManager.updateProgress(job.id, {
+          stage: 7,
+          stageLabel: 'Narration skipped',
+          progress: 95,
+          detail: 'TTS generation failed, continuing...',
+        });
+      }
+    }
+
     // Complete job
     jobManager.completeJob(job.id, {
-      data,
+      data: { ...data, timeline: enrichedTimeline },
       playlistId: record.id,
       plan,
       trackSearchResults: {

@@ -4,12 +4,13 @@ const fsp = require('fs').promises;
 const { ttsToMp3Buffer } = require('../services/tts');
 const config = require('../config');
 const { dbg } = require('../utils/logger');
+const jobManager = require('../services/jobManager');
 
 const router = express.Router();
 
 router.post('/api/tts-batch', async (req, res) => {
   try {
-    const { segments, playlistId, instructions } = req.body || {};
+    const { segments, playlistId, instructions, jobId } = req.body || {};
     if (!Array.isArray(segments) || segments.length === 0) {
       return res.status(400).json({ error: 'segments must be a non-empty array of { text }' });
     }
@@ -22,6 +23,7 @@ router.post('/api/tts-batch', async (req, res) => {
       outDir: config.paths.ttsOutputDir, 
       mock: !!config.features?.mockTts, 
       playlistId,
+      jobId,
       customInstructions: !!instructions 
     });
 
@@ -42,6 +44,8 @@ router.post('/api/tts-batch', async (req, res) => {
     }
     
     let idx = 0;
+    const totalSegments = segments.length;
+    
     for (const seg of segments) {
       const text = (seg && typeof seg.text === 'string') ? seg.text.trim() : '';
       if (!text) {
@@ -49,6 +53,18 @@ router.post('/api/tts-batch', async (req, res) => {
         idx++;
         continue;
       }
+      
+      // Update job progress if jobId provided
+      if (jobId) {
+        const progressPercent = 85 + Math.round((idx / totalSegments) * 10); // 85-95%
+        jobManager.updateProgress(jobId, {
+          stage: 7,
+          stageLabel: 'Generating narration',
+          progress: progressPercent,
+          detail: `Generating track ${idx + 1}/${totalSegments}`,
+        });
+      }
+      
       const base = pid ? `tts_${pid}_${idx}` : `tts_${Date.now()}_${idx}`;
       const fileName = `${base}.mp3`;
       const filePath = path.join(config.paths.ttsOutputDir, fileName);

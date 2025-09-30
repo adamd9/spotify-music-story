@@ -1232,34 +1232,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Invalid job result');
             }
             
+            // TTS is now generated server-side, just load the playlist
             try { 
-                if (docStatusEl) docStatusEl.textContent = 'Generating narration tracks…';
-                if (docSpinnerText) docSpinnerText.textContent = 'Generating narration tracks…';
+                if (docStatusEl) docStatusEl.textContent = 'Loading documentary...';
+                if (docSpinnerText) docSpinnerText.textContent = 'Loading documentary...';
             } catch {}
-            const withTTS = await generateTTSForDoc(drafted, playlistId);
-            
-            // Update playlist with TTS URLs
-            await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: withTTS.title || drafted.title,
-                    topic: withTTS.topic || drafted.topic,
-                    summary: withTTS.summary || drafted.summary,
-                    timeline: withTTS.timeline
-                })
-            });
             
             if (saveStatusEl) {
                 const shareUrl = `${window.location.origin}/player.html?playlistId=${playlistId}`;
-                saveStatusEl.textContent = `Saved as: ${withTTS.title || drafted.title || 'Music history'} — Share ID: ${playlistId} — ${shareUrl}`;
+                saveStatusEl.textContent = `Saved as: ${drafted.title || 'Music history'} — Share ID: ${playlistId} — ${shareUrl}`;
             }
             
             try { await refreshMyPlaylists(); } catch {}
-            buildFromDoc(withTTS);
+            buildFromDoc(drafted);
         } catch (err) {
-            console.error('TTS generation failed', err);
-            if (docStatusEl) docStatusEl.textContent = 'Documentary created but TTS failed. Check "My Playlists".';
+            console.error('Load failed', err);
+            if (docStatusEl) docStatusEl.textContent = 'Documentary created. Check "My Playlists".';
         } finally {
             try { if (docSpinner) docSpinner.classList.add('hidden'); } catch {}
             try { if (generateDocBtn) generateDocBtn.disabled = false; } catch {}
