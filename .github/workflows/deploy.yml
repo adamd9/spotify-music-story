@@ -21,5 +21,5 @@ jobs:
             -H "Authorization: token ${{ secrets.DOCKER_SERVER_ACTIONS_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Content-Type: application/json" \
-            https://api.github.com/repos/adamd9/docker-server/dispatches \
+            https://api.github.com/repos/adamd9/docker-server-dev/dispatches \
             -d '{"event_type": "deploy-service", "client_payload": {"domain": "${{ env.DOMAIN }}", "action": "down-up"}}'
