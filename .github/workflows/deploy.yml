@@ -13,7 +13,7 @@ jobs:
       - name: Set domain
         id: set-domain
         run: |
-          echo "DOMAIN=musicstory.greatmachineinthesky.com" >> $GITHUB_ENV
+          echo "DOMAIN=musicstory.drop37.com" >> $GITHUB_ENV
           
       - name: Trigger Docker Server Deployment
         run: |
