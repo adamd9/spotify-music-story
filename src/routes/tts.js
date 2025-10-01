@@ -14,17 +14,18 @@ router.post('/api/tts-batch', async (req, res) => {
     if (!Array.isArray(segments) || segments.length === 0) {
       return res.status(400).json({ error: 'segments must be a non-empty array of { text }' });
     }
+
     await fsp.mkdir(config.paths.ttsOutputDir, { recursive: true });
-    dbg('tts-batch: start', { 
-      count: segments.length, 
-      model: config.openai.ttsModel, 
+    dbg('tts-batch: start', {
+      count: segments.length,
+      model: config.openai.ttsModel,
       voice: config.openai.ttsVoice,
       speed: config.openai.ttsSpeed,
-      outDir: config.paths.ttsOutputDir, 
-      mock: !!config.features?.mockTts, 
+      outDir: config.paths.ttsOutputDir,
+      mock: config.features.mockTts,
       playlistId,
       jobId,
-      customInstructions: !!instructions 
+      customInstructions: instructions !== undefined,
     });
 
     // Mock mode: return a known local MP3 for each segment (no OpenAI call)
@@ -35,26 +36,24 @@ router.post('/api/tts-batch', async (req, res) => {
     }
 
     const urls = [];
-    const pid = (typeof playlistId === 'string' && playlistId) ? playlistId.replace(/[^a-zA-Z0-9_-]/g, '-') : null;
-    
-    // Prepare options object for TTS (optional custom instructions)
+    const failed = [];
+    const pid = (typeof playlistId === 'string' && playlistId)
+      ? playlistId.replace(/[^a-zA-Z0-9_-]/g, '-')
+      : null;
+
     const ttsOptions = {};
-    if (instructions !== undefined) {
-      ttsOptions.instructions = instructions;
-    }
-    
-    let idx = 0;
+    if (instructions !== undefined) ttsOptions.instructions = instructions;
+
     const totalSegments = segments.length;
-    
-    for (const seg of segments) {
+    for (let idx = 0; idx < totalSegments; idx++) {
+      const seg = segments[idx];
       const text = (seg && typeof seg.text === 'string') ? seg.text.trim() : '';
       if (!text) {
         urls.push(null);
-        idx++;
+        failed.push(idx);
         continue;
       }
-      
-      // Update job progress if jobId provided
+
       if (jobId) {
         const progressPercent = 85 + Math.round((idx / totalSegments) * 10); // 85-95%
         jobManager.updateProgress(jobId, {
@@ -64,21 +63,27 @@ router.post('/api/tts-batch', async (req, res) => {
           detail: `Generating track ${idx + 1}/${totalSegments}`,
         });
       }
-      
+
       const base = pid ? `tts_${pid}_${idx}` : `tts_${Date.now()}_${idx}`;
       const fileName = `${base}.mp3`;
       const filePath = path.join(config.paths.ttsOutputDir, fileName);
       const publicUrl = `/tts/${fileName}`;
+
       try {
         const buf = await ttsToMp3Buffer(text, ttsOptions);
         await fsp.writeFile(filePath, buf);
         urls.push(publicUrl);
         dbg('tts-batch: wrote file', { i: idx, url: publicUrl });
       } catch (err) {
-        console.error('tts-batch error', err);
+        console.error('tts-batch error', { index: idx, message: err?.message || String(err) });
         urls.push(null);
+        failed.push(idx);
       }
-      idx++;
+    }
+
+    if (failed.length > 0) {
+      console.error('tts-batch partial failure', { failedCount: failed.length, failed });
+      return res.status(502).json({ ok: false, error: 'Partial TTS failure', failed, urls });
     }
 
     return res.json({ ok: true, urls });

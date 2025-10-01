@@ -224,8 +224,11 @@ async function generateTTSForDoc(doc, playlistId) {
             body: JSON.stringify({ segments: texts, playlistId })
         });
         if (!resp.ok) {
-            dbg('generateTTSForDoc: tts-batch failed', { status: resp.status });
-            try { if (docStatusEl) docStatusEl.textContent = 'Narration generation failed — continuing without TTS.'; } catch {}
+            let details = {};
+            try { details = await resp.json(); } catch {}
+            dbg('generateTTSForDoc: tts-batch failed', { status: resp.status, details });
+            try { if (docStatusEl) docStatusEl.textContent = 'Narration generation failed.'; } catch {}
+            showError('Narration generation failed. Please try again.');
             return doc;
         }
         const json = await resp.json();
@@ -244,8 +247,9 @@ async function generateTTSForDoc(doc, playlistId) {
         return doc;
     } catch (e) {
         console.error('generateTTSForDoc error', e);
-        try { if (docStatusEl) docStatusEl.textContent = 'Narration generation failed — continuing without TTS.'; } catch {}
-        return doc; // fall back to mock if TTS fails
+        try { if (docStatusEl) docStatusEl.textContent = 'Narration generation failed.'; } catch {}
+        showError('Narration generation failed. Please try again.');
+        return doc;
     }
 }
 
@@ -455,7 +459,11 @@ function buildPlaylistFromDoc(doc) {
                 if (!entry || !entry.type) return;
                 if (entry.type === 'narration') {
                     narrationCount += 1;
-                    const ttsUrl = entry.tts_url || entry.ttsUrl || entry.url || '/audio/voice-of-character-montervillain-expressions-132288.mp3';
+                    const ttsUrl = entry.tts_url || entry.ttsUrl || entry.url;
+                    if (!ttsUrl) {
+                        showError('Narration audio missing for one or more segments. Please retry generation.');
+                        return; // skip adding this narration segment
+                    }
                     const narrationTitle = entry.title || `Narration ${narrationCount}`;
                     newPlaylist.push({
                         type: 'mp3',
@@ -488,7 +496,11 @@ function buildPlaylistFromDoc(doc) {
                 if (item.type === 'narration') {
                     const seg = doc.narration_segments[item.narration_index];
                     if (!seg) return;
-                    const ttsUrl = seg.tts_url || seg.ttsUrl || seg.url || '/audio/voice-of-character-montervillain-expressions-132288.mp3';
+                    const ttsUrl = seg.tts_url || seg.ttsUrl || seg.url;
+                    if (!ttsUrl) {
+                        showError('Narration audio missing for one or more segments. Please retry generation.');
+                        return; // skip adding this narration segment
+                    }
                     const narrationTitle = seg.title || `Narration ${item.narration_index + 1}`;
                     newPlaylist.push({
                         type: 'mp3',
