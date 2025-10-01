@@ -333,10 +333,27 @@ async function getActiveCredentials() {
     return null;
 }
 
+// Theme Management
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+}
+
+// Initialize theme on load
+initTheme();
+
 // DOM Elements
 const loginSection = document.getElementById('login');
 const playerSection = document.getElementById('player');
 const loginButton = document.getElementById('login-button');
+const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const playPauseButton = document.getElementById('play-pause');
 const previousButton = document.getElementById('previous');
 const nextButton = document.getElementById('next');
@@ -1731,6 +1748,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         applySectionDuration();
         // Update on change
         sectionDurationSelect.addEventListener('change', applySectionDuration);
+    }
+
+    // Theme Toggle Handler
+    if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', toggleTheme);
     }
 
     // Settings Modal Handlers

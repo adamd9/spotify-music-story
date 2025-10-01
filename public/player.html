@@ -14,7 +14,10 @@
         <header>
             <h1>Music Story <span style="font-size: 0.6em; color: var(--text-secondary);">(Spotify)</span></h1>
             <p>Transform any artist or music topic into an immersive audio documentary with AI-narrated context and perfectly curated tracks</p>
-            <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+            <div class="header-actions">
+                <button id="theme-toggle-btn" class="icon-btn" title="Toggle Dark/Light Mode">🌓</button>
+                <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+            </div>
         </header>
 
         <div class="player-wrapper">
@@ -176,7 +179,7 @@
                     <details class="settings-help">
                         <summary>How to get your own credentials</summary>
                         <ol>
-                            <li>Go to <a style="color:white;" href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
+                            <li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
                             <li>Log in with your Spotify account</li>
                             <li>Click "Create app"</li>
                             <li>Fill in:
@@ -215,7 +218,7 @@
                         <h3>Option 2: Use Your Own Credentials</h3>
                         <p>Set up your own Spotify Developer app (takes 2 minutes):</p>
                         <ol>
-                            <li>Go to <a style="color:white;" href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
+                            <li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
                             <li>Create a new app with redirect URI: <code>http://localhost:8888/callback</code></li>
                             <li>Copy your Client ID and Secret</li>
                             <li>Click the ⚙️ Settings button above and paste your credentials</li>
