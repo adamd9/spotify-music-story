@@ -37,6 +37,11 @@ async function fetchSpotifyUserId() {
             clearAccessToken('401 on /v1/me');
             return null;
         }
+        if (r.status === 403) {
+            // User not added to developer dashboard
+            showAccessDeniedOverlay();
+            return null;
+        }
         if (!r.ok) return null;
         const me = await r.json();
         return me?.id || null;
@@ -271,7 +276,9 @@ const state = {
     // Internal timing for Spotify clip limiting
     spotifyClipTimeoutId: null,
     spotifyClipStartTime: 0,
-    spotifyClipPlayedMs: 0
+    spotifyClipPlayedMs: 0,
+    // Track if access denied overlay has been shown
+    accessDeniedShown: false
 };
 
 // DOM Elements
@@ -682,6 +689,11 @@ async function transferPlaybackHere(deviceId) {
             })
         });
         
+        if (response.status === 403) {
+            showAccessDeniedOverlay();
+            return;
+        }
+        
         if (!response.ok) {
             throw new Error('Failed to transfer playback');
         }
@@ -812,6 +824,10 @@ async function playSpotifyTrack(track) {
             const searchResp = await fetch(`https://api.spotify.com/v1/search?type=track&limit=1&q=${q}`, {
                 headers: { 'Authorization': `Bearer ${state.accessToken}` }
             });
+            if (searchResp.status === 403) {
+                showAccessDeniedOverlay();
+                throw new Error('Access denied');
+            }
             if (!searchResp.ok) throw new Error('Failed to search track');
             const searchData = await searchResp.json();
             const item = searchData?.tracks?.items?.[0];
@@ -850,6 +866,11 @@ async function playSpotifyTrack(track) {
                     uris: [trackUri]
                 })
             });
+            
+            if (response.status === 403) {
+                showAccessDeniedOverlay();
+                throw new Error('Access denied');
+            }
             
             if (!response.ok) {
                 dbg('Spotify play failed', { status: response.status });
@@ -1105,6 +1126,18 @@ function showError(message) {
     setTimeout(() => {
         errorElement.classList.add('hidden');
     }, 5000);
+}
+
+// Show access denied overlay when user is not added to developer dashboard
+function showAccessDeniedOverlay() {
+    // Only show once per session
+    if (state.accessDeniedShown) return;
+    state.accessDeniedShown = true;
+    
+    const overlay = document.getElementById('access-denied-overlay');
+    if (overlay) {
+        overlay.classList.remove('hidden');
+    }
 }
 
 // Initialize the player when the page loads
