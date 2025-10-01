@@ -18,16 +18,19 @@ function generateRandomString(length) {
 }
 
 // Login endpoint - redirects to Spotify's authorization page
-router.get('/login', (_req, res) => {
+router.get('/login', (req, res) => {
   const state = generateRandomString(16);
   const scope = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state';
+  
+  // Dynamically construct redirect URI based on request origin
+  const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
 
   res.redirect('https://accounts.spotify.com/authorize?' +
     querystring.stringify({
       response_type: 'code',
       client_id: config.spotify.clientId,
       scope: scope,
-      redirect_uri: config.spotify.redirectUri,
+      redirect_uri: redirectUri,
       state: state
     }));
 });
@@ -36,6 +39,9 @@ router.get('/login', (_req, res) => {
 router.get('/callback', (req, res) => {
   const code = req.query.code || null;
   const state = req.query.state || null;
+  
+  // Dynamically construct redirect URI
+  const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
 
   if (state === null) {
     res.redirect('/#' + querystring.stringify({ error: 'state_mismatch' }));
@@ -44,7 +50,7 @@ router.get('/callback', (req, res) => {
       url: 'https://accounts.spotify.com/api/token',
       form: {
         code: code,
-        redirect_uri: config.spotify.redirectUri,
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code'
       },
       headers: {

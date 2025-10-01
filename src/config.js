@@ -23,7 +23,7 @@ const config = {
   spotify: {
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
-    redirectUri: process.env.REDIRECT_URI || 'http://localhost:8888/callback',
+    // redirectUri is dynamically calculated per request
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,

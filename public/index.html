@@ -14,6 +14,7 @@
         <header>
             <h1>Spotify MP3 Mix Player</h1>
             <p>Listen to your favorite Spotify tracks mixed with custom audio</p>
+            <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
         </header>
 
         
@@ -67,13 +68,88 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚙️ Settings</h2>
+                <button id="settings-close-btn" class="close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <h3>Custom Spotify Credentials</h3>
+                <p class="settings-note">Use your own Spotify Developer credentials to bypass access restrictions.</p>
+                
+                <div class="form-group">
+                    <label for="custom-client-id">Client ID</label>
+                    <input type="text" id="custom-client-id" placeholder="Your Spotify Client ID">
+                </div>
+                
+                <div class="form-group">
+                    <label for="custom-client-secret">Client Secret</label>
+                    <input type="password" id="custom-client-secret" placeholder="Your Spotify Client Secret">
+                </div>
+                
+                <div class="form-group">
+                    <label for="custom-redirect-uri">Redirect URI (for your Spotify app settings)</label>
+                    <input type="text" id="custom-redirect-uri" readonly>
+                    <small>Copy this value and add it to your Spotify app's Redirect URIs</small>
+                </div>
+                
+                <div class="settings-actions">
+                    <button id="save-credentials-btn" class="btn btn-primary">Save Credentials</button>
+                    <button id="clear-credentials-btn" class="btn btn-secondary">Clear & Use Default</button>
+                </div>
+                
+                <details class="settings-help">
+                    <summary>How to get your own credentials</summary>
+                    <ol>
+                        <li>Go to <a style="color:white;" href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
+                        <li>Log in with your Spotify account</li>
+                        <li>Click "Create app"</li>
+                        <li>Fill in:
+                            <ul>
+                                <li><strong>App name:</strong> Music Story (or any name)</li>
+                                <li><strong>App description:</strong> Personal music documentary player</li>
+                                <li><strong>Redirect URI:</strong> Copy the value shown above in the "Redirect URI" field</li>
+                                <li><strong>APIs:</strong> Check "Web Playback SDK"</li>
+                            </ul>
+                        </li>
+                        <li>Click "Save"</li>
+                        <li>Copy your <strong>Client ID</strong> and <strong>Client Secret</strong></li>
+                        <li>Paste them in the fields above and click "Save Credentials"</li>
+                        <li>Refresh the page and log in again</li>
+                    </ol>
+                </details>
+            </div>
+        </div>
+    </div>
+
     <!-- Access Denied Overlay -->
     <div id="access-denied-overlay" class="access-overlay hidden">
         <div class="access-dialog">
             <h2>🔒 Access Required</h2>
             <p>Your Spotify account needs to be added to this app's developer dashboard to use the player.</p>
-            <p class="access-note">This is a Spotify requirement for apps in development mode.</p>
-            <p class="access-note">Please email <strong>adam@drop37.com</strong> with your Spotify account email to request access.</p>
+            
+            <div class="access-options">
+                <div class="access-option">
+                    <h3>Option 1: Request Access</h3>
+                    <p>Email <strong>adam@drop37.com</strong> with your Spotify account email to request access.</p>
+                </div>
+                
+                <div class="access-option-divider">— OR —</div>
+                
+                <div class="access-option">
+                    <h3>Option 2: Use Your Own Credentials</h3>
+                    <p>Set up your own Spotify Developer app (takes 2 minutes):</p>
+                    <ol>
+                        <li>Go to <a style="color:white;" href="https://developer.spotify.com/dashboard" target="_blank">Spotify Developer Dashboard</a></li>
+                        <li>Create a new app with redirect URI: <code>http://localhost:8888/callback</code></li>
+                        <li>Copy your Client ID and Secret</li>
+                        <li>Click the ⚙️ Settings button above and paste your credentials</li>
+                    </ol>
+                    <button id="open-settings-from-denied" class="btn btn-primary">Open Settings</button>
+                </div>
+            </div>
         </div>
     </div>
 

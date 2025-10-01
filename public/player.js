@@ -281,6 +281,58 @@ const state = {
     accessDeniedShown: false
 };
 
+// Custom Credentials Management
+const CUSTOM_CREDS_KEY = 'spotify_custom_credentials';
+
+function getCustomCredentials() {
+    try {
+        const stored = localStorage.getItem(CUSTOM_CREDS_KEY);
+        return stored ? JSON.parse(stored) : null;
+    } catch {
+        return null;
+    }
+}
+
+function saveCustomCredentials(clientId, clientSecret) {
+    const creds = { clientId, clientSecret };
+    localStorage.setItem(CUSTOM_CREDS_KEY, JSON.stringify(creds));
+    return creds;
+}
+
+function clearCustomCredentials() {
+    localStorage.removeItem(CUSTOM_CREDS_KEY);
+}
+
+function hasCustomCredentials() {
+    const creds = getCustomCredentials();
+    return creds && creds.clientId && creds.clientSecret;
+}
+
+// Get redirect URI (always /callback on current origin)
+function getRedirectUri() {
+    return window.location.origin + '/callback';
+}
+
+// Get active credentials (custom or default from server)
+async function getActiveCredentials() {
+    const custom = getCustomCredentials();
+    if (custom && custom.clientId && custom.clientSecret) {
+        return custom;
+    }
+    // Fallback to server config
+    try {
+        const resp = await fetch('/api/config');
+        if (resp.ok) {
+            const config = await resp.json();
+            return {
+                clientId: config.clientId,
+                clientSecret: null // Server doesn't expose secret
+            };
+        }
+    } catch {}
+    return null;
+}
+
 // DOM Elements
 const loginSection = document.getElementById('login');
 const playerSection = document.getElementById('player');
@@ -342,6 +394,17 @@ const docSummaryDisplay = document.getElementById('doc-summary');
 const importOpenBtn = document.getElementById('import-open-btn');
 const importModal = document.getElementById('import-modal');
 const importCancelBtn = document.getElementById('import-cancel-btn');
+
+// Settings modal elements
+const settingsBtn = document.getElementById('settings-btn');
+const settingsModal = document.getElementById('settings-modal');
+const settingsCloseBtn = document.getElementById('settings-close-btn');
+const customClientIdInput = document.getElementById('custom-client-id');
+const customClientSecretInput = document.getElementById('custom-client-secret');
+const customRedirectUriInput = document.getElementById('custom-redirect-uri');
+const saveCredentialsBtn = document.getElementById('save-credentials-btn');
+const clearCredentialsBtn = document.getElementById('clear-credentials-btn');
+const openSettingsFromDenied = document.getElementById('open-settings-from-denied');
 
 // Built-in default album art (inline SVG, dark gray square with music note)
 const DEFAULT_ALBUM_ART = 'data:image/svg+xml;utf8,\
@@ -476,13 +539,53 @@ window.onSpotifyWebPlaybackSDKReady = () => {
 };
 
 // Parse URL hash to get access token
-function parseHash() {
+async function parseHash() {
     const hash = window.location.hash.substring(1);
     const params = new URLSearchParams(hash);
     const hashToken = params.get('access_token');
+    const authCode = params.get('auth_code');
+    
     // Prefer sessionStorage; fall back to localStorage
     const storage = window.sessionStorage || window.localStorage;
-    if (hashToken) {
+    
+    // Handle custom auth code exchange
+    if (authCode && !hashToken) {
+        const creds = getCustomCredentials();
+        if (creds && creds.clientId && creds.clientSecret) {
+            try {
+                dbg('Exchanging auth code for token with custom credentials');
+                const response = await fetch('/api/exchange-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code: authCode,
+                        client_id: creds.clientId,
+                        client_secret: creds.clientSecret,
+                        redirect_uri: getRedirectUri()
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    try { storage.setItem('spotify_access_token', data.access_token); } catch {}
+                    if (data.refresh_token) {
+                        try { storage.setItem('spotify_refresh_token', data.refresh_token); } catch {}
+                    }
+                    state.accessToken = data.access_token;
+                    // Clear hash
+                    try { window.history.replaceState({}, '', window.location.pathname + window.location.search); } catch {}
+                } else {
+                    console.error('Failed to exchange code for token');
+                    window.location.href = '/';
+                    return;
+                }
+            } catch (error) {
+                console.error('Code exchange error:', error);
+                window.location.href = '/';
+                return;
+            }
+        }
+    } else if (hashToken) {
         try { storage.setItem('spotify_access_token', hashToken); } catch {}
         // Hard clear the URL hash so the token is not visible
         try { window.history.replaceState({}, '', window.location.pathname + window.location.search); } catch {}
@@ -491,6 +594,7 @@ function parseHash() {
         // Attempt to retrieve from storage
         try { state.accessToken = storage.getItem('spotify_access_token') || null; } catch { state.accessToken = null; }
     }
+    
     dbg('parseHash', { hasToken: !!state.accessToken, path: window.location.pathname });
 
     if (state.accessToken) {
@@ -629,7 +733,18 @@ function setupEventListeners() {
     // UI Event Listeners
     if (loginButton) {
         loginButton.addEventListener('click', () => {
-            window.location.href = '/login';
+            // Check if custom credentials are configured
+            const creds = getCustomCredentials();
+            if (creds && creds.clientId) {
+                // Use custom auth flow
+                const params = new URLSearchParams({
+                    client_id: creds.clientId
+                });
+                window.location.href = `/login-custom?${params.toString()}`;
+            } else {
+                // Use default auth flow
+                window.location.href = '/login';
+            }
         });
     }
     
@@ -1155,7 +1270,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const loginBtn = document.getElementById('login-button');
     if (loginBtn) {
         loginBtn.addEventListener('click', () => {
-            window.location.href = '/login';
+            // Check if custom credentials are configured
+            const creds = getCustomCredentials();
+            if (creds && creds.clientId) {
+                // Use custom auth flow
+                const params = new URLSearchParams({
+                    client_id: creds.clientId
+                });
+                window.location.href = `/login-custom?${params.toString()}`;
+            } else {
+                // Use default auth flow
+                window.location.href = '/login';
+            }
         });
     }
     
@@ -1605,5 +1731,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         applySectionDuration();
         // Update on change
         sectionDurationSelect.addEventListener('change', applySectionDuration);
+    }
+
+    // Settings Modal Handlers
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            // Load current credentials into form
+            const creds = getCustomCredentials();
+            if (creds) {
+                if (customClientIdInput) customClientIdInput.value = creds.clientId || '';
+                if (customClientSecretInput) customClientSecretInput.value = creds.clientSecret || '';
+            } else {
+                if (customClientIdInput) customClientIdInput.value = '';
+                if (customClientSecretInput) customClientSecretInput.value = '';
+            }
+            // Always show current redirect URI (read-only, for reference)
+            if (customRedirectUriInput) customRedirectUriInput.value = getRedirectUri();
+            if (settingsModal) settingsModal.classList.remove('hidden');
+        });
+    }
+
+    if (settingsCloseBtn) {
+        settingsCloseBtn.addEventListener('click', () => {
+            if (settingsModal) settingsModal.classList.add('hidden');
+        });
+    }
+
+    if (saveCredentialsBtn) {
+        saveCredentialsBtn.addEventListener('click', () => {
+            const clientId = customClientIdInput ? customClientIdInput.value.trim() : '';
+            const clientSecret = customClientSecretInput ? customClientSecretInput.value.trim() : '';
+
+            if (!clientId || !clientSecret) {
+                alert('Please enter both Client ID and Client Secret');
+                return;
+            }
+
+            saveCustomCredentials(clientId, clientSecret);
+            alert('Credentials saved! Please refresh the page and log in again with your credentials.');
+            if (settingsModal) settingsModal.classList.add('hidden');
+        });
+    }
+
+    if (clearCredentialsBtn) {
+        clearCredentialsBtn.addEventListener('click', () => {
+            if (confirm('Clear custom credentials and use default app credentials?')) {
+                clearCustomCredentials();
+                alert('Credentials cleared! Refresh the page to use default credentials.');
+                if (settingsModal) settingsModal.classList.add('hidden');
+            }
+        });
+    }
+
+    if (openSettingsFromDenied) {
+        openSettingsFromDenied.addEventListener('click', () => {
+            const accessDeniedOverlay = document.getElementById('access-denied-overlay');
+            if (accessDeniedOverlay) accessDeniedOverlay.classList.add('hidden');
+            if (settingsBtn) settingsBtn.click();
+        });
     }
 });

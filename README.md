@@ -43,7 +43,7 @@ A web application that mixes Spotify tracks with local MP3 files and can auto-ge
    # Spotify
    CLIENT_ID=your_spotify_client_id
    CLIENT_SECRET=your_spotify_client_secret
-   REDIRECT_URI=http://localhost:8888/callback
+   # Note: Redirect URI is automatically set to {current_origin}/callback
 
    # Server
    PORT=8888
@@ -83,6 +83,7 @@ This runs the modular server (`src/server.js`) with nodemon and serves `public/`
 ### 6. Access the Application
 
 Open your web browser and navigate to:
+
 ```
 http://localhost:8888
 ```
@@ -112,39 +113,39 @@ flowchart TD
     Start([User enters artist name]) --> Login{Logged in to<br/>Spotify?}
     Login -->|No| Error1[Error: Login required]
     Login -->|Yes| Stage1[Stage 1: Identify Artist]
-    
+  
     Stage1 --> LLM1[LLM: Normalize artist name]
     LLM1 --> Spotify1[Spotify: Search for artist]
     Spotify1 --> CheckArtist{Artist found?}
     CheckArtist -->|No| Error2[Error: Artist not found]
     CheckArtist -->|Yes| TopTracks[Fetch top 20 tracks for context]
-    
+  
     TopTracks --> Stage2[Stage 2: Plan Documentary]
     Stage2 --> LLM2[LLM: Create documentary plan<br/>- Title & narrative arc<br/>- Era to cover<br/>- 5 specific required tracks<br/>- Why each track is essential<br/>- Narrative role of each]
-    
+  
     LLM2 --> Stage3[Stage 3: Targeted Track Search]
     Stage3 --> SearchLoop[For each required track:<br/>Search Spotify by name + artist]
     SearchLoop --> CheckFound{All 5 tracks<br/>found?}
-    
+  
     CheckFound -->|Yes| Stage5[Stage 5: Generate Final Documentary]
     CheckFound -->|No| Stage4[Stage 4: Fetch Backup Catalog]
     Stage4 --> FetchAlbums[Fetch up to 200 albums]
     FetchAlbums --> SampleTracks[Sample tracks across albums<br/>for broad coverage]
     SampleTracks --> Stage5
-    
+  
     Stage5 --> LLM3[LLM: Generate final timeline<br/>following the plan<br/>- Use found tracks<br/>- Interleave narration & songs<br/>- Chronological order]
-    
+  
     LLM3 --> Stage6[Stage 6: Generate TTS Narration]
     Stage6 --> MockCheck{MOCK_TTS<br/>enabled?}
     MockCheck -->|Yes| MockTTS[Return placeholder MP3]
     MockCheck -->|No| RealTTS[OpenAI TTS with British<br/>music journalist voice]
-    
+  
     MockTTS --> Stage7[Stage 7: Save & Build Playlist]
     RealTTS --> Stage7
     Stage7 --> SaveDB[(Save to filesystem<br/>data/playlists/)]
     SaveDB --> BuildUI[Build playable timeline<br/>in player UI]
     BuildUI --> Done([Ready to play!])
-    
+  
     style Stage1 fill:#e1f5ff
     style Stage2 fill:#fff4e1
     style Stage3 fill:#e1ffe1
@@ -157,21 +158,10 @@ flowchart TD
     style LLM3 fill:#ffd700
 ```
 
-### Key Innovation: Plan-First Approach
-
-**Traditional approach**: Fetch random tracks → LLM picks from whatever is available
-
-**Our approach**: LLM plans the story first → Search for specific tracks → Generate final doc
-
-This ensures:
-- ✅ Tracks are chosen for **narrative importance**, not random sampling
-- ✅ Better **chronological coverage** across the artist's career
-- ✅ Each track has a **specific purpose** in the documentary story
-- ✅ **Transparent reasoning** - the plan explains why each track matters
-
 ### Example: The Prodigy
 
 **Stage 2 Plan Output**:
+
 ```json
 {
   "title": "The Prodigy: Rave to Riot",
@@ -203,34 +193,7 @@ This ensures:
 
 To customize the playlist, edit the `setupDefaultPlaylist()` function in `public/player.js`. You can add Spotify tracks or local MP3 files to the playlist.
 
-### Adding Spotify Tracks
-
-```javascript
-{
-    type: 'spotify', 
-    id: 'spotify:track:YOUR_SPOTIFY_TRACK_ID',
-    name: 'Track Name',
-    artist: 'Artist Name',
-    albumArt: 'URL_TO_ALBUM_ART',
-    duration: DURATION_IN_MS
-}
-```
-
-### Adding Local MP3 Files
-
-```javascript
-{
-    type: 'mp3', 
-    id: 'unique_id', 
-    name: 'MP3 Track Name',
-    artist: 'Artist Name',
-    albumArt: 'URL_TO_IMAGE',
-    duration: DURATION_IN_MS,
-    url: '/audio/your_file.mp3'
-}
-```
-
-## Keyboard Shortcuts
+### Keyboard Shortcuts
 
 - **Space**: Play/Pause
 - **Ctrl + →**: Next track
@@ -248,72 +211,9 @@ To customize the playlist, edit the `setupDefaultPlaylist()` function in `public
 
 ---
 
-## Architecture Overview
-
-- **Frontend** (`public/`)
-  - `player.html` + `player.js`: UI, Spotify SDK setup, doc generation workflow, playlist rendering, narration TTS requests, and “My Playlists” interactions.
-  - `index.html`: Minimal landing/login page.
-  - `styles.css`: Responsive layout, player styles, spinner, badges.
-  - `favicon.svg`: Custom favicon with record/play/speech motif.
-
-- **Server (development)** (`src/`)
-  - `src/app.js`, `src/server.js`: Express app with modular routes.
-  - `src/routes/tts.js`: `/api/tts-batch` for TTS with voice instructions (honors `MOCK_TTS`).
-  - `src/routes/musicDoc.js`: `/api/music-doc` multi-stage documentary generation (plan → search → generate).
-  - `src/routes/spotify.js`: Spotify helper endpoints (identify artist, fetch catalog).
-  - `src/routes/playlists.js`: Filesystem-backed playlist persistence.
-  - `src/services/musicPlan.js`: Documentary planning LLM service.
-  - `src/services/trackSearch.js`: Targeted Spotify track search.
-  - `src/prompts/`: Externalized prompt templates for identify, musicDoc, musicPlan, and TTS.
-  - `src/config.js`: Central config, including `features.mockTts` and paths.
-
-- **Server (alternative single-file)**
-  - `server.js`: A root-level single-file server that includes equivalent endpoints. Use if you prefer running `node server.js` (update `package.json` accordingly).
-
-- **Storage**
-  - `public/tts/`: Generated narration MP3s.
-  - `data/playlists/`: JSON playlist records for “My Playlists”.
-
----
-
-## API Endpoints
-
-All routes are served by the Express server. In development, `npm run dev` serves the modular routes under `src/`.
-
-- **Auth + Player**
-  - `GET /login` → Redirect to Spotify OAuth.
-  - `GET /callback` → OAuth callback; redirects to `/player.html` with tokens in URL hash.
-  - `GET /refresh_token?refresh_token=...` → Access token refresh.
-
-- **Config**
-  - `GET /config.js` → Defines `window.CLIENT_DEBUG` based on server env for client logs.
-
-- **Spotify Helpers**
-  - `POST /api/identify-artist` → `{ query, accessToken }` → `{ ok, artist }`.
-  - `POST /api/artist-tracks` → `{ artistId, accessToken, market?, desiredCount? }` → `{ ok, tracks }`.
-
-- **Documentary Generation (Multi-Stage)**
-  - `POST /api/music-doc` → Body includes `{ topic, accessToken, prompt?, ownerId?, narrationTargetSecs? }` and returns `{ ok, data, playlistId, plan, trackSearchResults }`.
-  - Multi-stage workflow:
-    1. **Plan**: LLM creates documentary outline with specific track requirements
-    2. **Search**: Finds those exact tracks on Spotify
-    3. **Generate**: LLM creates final timeline with actual available tracks
-  - Returns `data` with interleaved `timeline` containing narration and exactly 5 song items, plus the documentary `plan` and track search results.
-
-- **TTS**
-  - `POST /api/tts-batch` → `{ segments: [{ text }] }` → `{ ok, urls }`. In mock mode (`MOCK_TTS=1`), returns a placeholder MP3 URL for each segment without calling OpenAI.
-
-- **Playlists (Persistence for “My Playlists”)**
-  - `POST /api/playlists` → `{ ownerId, title, topic, summary, timeline }` → `{ ok, playlist }`.
-  - `GET /api/playlists/:id` → `{ ok, playlist }`.
-  - `PATCH /api/playlists/:id` → Partial updates `{ title?, topic?, summary?, timeline? }` → `{ ok, playlist }`.
-  - `GET /api/users/:ownerId/playlists` → `{ ok, playlists: [{ id, ownerId, title, topic, createdAt, updatedAt }] }`.
-
----
-
 ## Environment Variables Reference
 
-- `CLIENT_ID`, `CLIENT_SECRET`, `REDIRECT_URI` - Spotify OAuth credentials
+- `CLIENT_ID`, `CLIENT_SECRET` - Spotify OAuth credentials (redirect URI is auto-calculated)
 - `PORT` - Server port (default: 8888)
 - `CLIENT_DEBUG`, `SERVER_DEBUG` - Enable verbose logging
 - `OPENAI_API_KEY` - OpenAI API key for LLM and TTS

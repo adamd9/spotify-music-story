@@ -6,6 +6,7 @@ const { dbg } = require('./utils/logger');
 // Routes
 const configRoute = require('./routes/configRoute');
 const authRoutes = require('./routes/auth');
+const customAuthRoutes = require('./routes/customAuth');
 const spotifyRoutes = require('./routes/spotify');
 const ttsRoutes = require('./routes/tts');
 const musicDocRoutes = require('./routes/musicDoc');
@@ -25,6 +26,7 @@ app.use('/tts', express.static(config.paths.ttsOutputDir));
 // Mount routes
 app.use(configRoute);
 app.use(authRoutes);
+app.use(customAuthRoutes);
 app.use(spotifyRoutes);
 app.use(ttsRoutes);
 app.use(musicDocRoutes);
