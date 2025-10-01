@@ -1,17 +1,22 @@
-# Spotify MP3 Mix + AI Music Documentary
+# Music Story (Spotify)
 
-A web application that mixes Spotify tracks with local MP3 files and can auto-generate a short “music documentary” (interleaving narration and 5 songs) using the OpenAI Responses API. Ideal for radio-style segments, podcasts, music history snippets, or playlist storytelling.
+**Transform any artist or music topic into an immersive audio documentary**
+
+Music Story uses AI to generate compelling, professionally-narrated documentaries that blend historical context, artist insights, and cultural analysis with perfectly curated Spotify tracks. Simply enter a prompt—like "The Beatles early years" or "90s grunge movement"—and get an instant audio experience that tells the story behind the music.
+
+Built with OpenAI's GPT-4 for intelligent content generation, advanced text-to-speech for professional narration, and Spotify's Web Playback SDK for seamless audio delivery.
 
 ## Features
 
-- **Spotify Integration**: Log in with Spotify Premium to play tracks using the Web Playback SDK.
-- **Local MP3 Playback**: Interleave narration or ads as local MP3s using the Web Audio API.
-- **AI Documentary Generator**: Input a topic (e.g., a band). The app identifies the artist, fetches a catalog, and uses OpenAI to draft a concise outline with exactly 5 songs, interspersed with narration.
-- **Text-to-Speech (TTS)**: Generate narration MP3s server-side (OpenAI) and play them inline between songs.
-- **Mock TTS Mode**: For development, bypass OpenAI and use a placeholder MP3 with `MOCK_TTS=1`.
-- **Playlist Persistence (“My Playlists”)**: Save generated outlines as shareable playlist records on the server.
-- **Responsive UI + Loading Spinner**: Clean UI with inline spinner while generating outlines.
-- **Keyboard Shortcuts**: Space to play/pause; Ctrl+Arrows for navigation and volume.
+- **AI-Powered Documentary Generation**: Enter any artist, band, or music topic and get an instant audio documentary with historical context, cultural insights, and 5 perfectly selected tracks
+- **Professional AI Narration**: High-quality text-to-speech narration using OpenAI's latest models, with customizable voice and pacing
+- **Seamless Spotify Integration**: Direct playback through Spotify Premium accounts using the Web Playback SDK
+- **Intelligent Track Selection**: AI analyzes artist catalogs to choose the most relevant songs that tell the story
+- **Save & Share**: Persistent playlists with shareable links—generate once, listen anywhere
+- **Real-Time Progress**: Live updates as your documentary is being created, from artist identification to narration generation
+- **Beautiful UI**: Clean, responsive interface optimized for both desktop and mobile
+- **Custom Credentials**: Use your own Spotify Developer app to bypass access restrictions
+- **Mock Mode**: Development mode with placeholder audio to save API costs during testing
 
 ## Prerequisites
 
