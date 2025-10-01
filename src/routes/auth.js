@@ -25,27 +25,41 @@ router.get('/login', (req, res) => {
   // Get redirect URI from query param (provided by frontend) or construct from request
   const redirectUri = req.query.redirect_uri || `${req.protocol}://${req.get('host')}/callback`;
 
+  // Encode redirect URI in state so we can retrieve it in callback
+  const stateData = JSON.stringify({ state, redirectUri });
+  const encodedState = Buffer.from(stateData).toString('base64');
+
   res.redirect('https://accounts.spotify.com/authorize?' +
     querystring.stringify({
       response_type: 'code',
       client_id: config.spotify.clientId,
       scope: scope,
       redirect_uri: redirectUri,
-      state: state
+      state: encodedState
     }));
 });
 
 // Callback endpoint - handles the response from Spotify
 router.get('/callback', (req, res) => {
   const code = req.query.code || null;
-  const state = req.query.state || null;
+  const encodedState = req.query.state || null;
   
-  // Get redirect URI from query param (provided by frontend) or construct from request
-  const redirectUri = req.query.redirect_uri || `${req.protocol}://${req.get('host')}/callback`;
-
-  if (state === null) {
+  if (encodedState === null) {
     res.redirect('/#' + querystring.stringify({ error: 'state_mismatch' }));
-  } else {
+    return;
+  }
+
+  // Decode state to get redirect URI
+  let redirectUri;
+  try {
+    const stateData = JSON.parse(Buffer.from(encodedState, 'base64').toString());
+    redirectUri = stateData.redirectUri;
+  } catch (e) {
+    // Fallback if state is not encoded (backwards compatibility)
+    redirectUri = `${req.protocol}://${req.get('host')}/callback`;
+  }
+
+  if (code) {
     const authOptions = {
       url: 'https://accounts.spotify.com/api/token',
       form: {

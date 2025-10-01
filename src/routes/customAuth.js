@@ -22,13 +22,17 @@ router.get('/login-custom', (req, res) => {
   const scope = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state';
   const state = Math.random().toString(36).substring(7);
 
+  // Encode redirect URI in state so we can retrieve it in callback
+  const stateData = JSON.stringify({ state, redirectUri, custom: true });
+  const encodedState = Buffer.from(stateData).toString('base64');
+
   res.redirect('https://accounts.spotify.com/authorize?' +
     querystring.stringify({
       response_type: 'code',
       client_id,
       scope,
       redirect_uri: redirectUri,
-      state
+      state: encodedState
     }));
 });
 

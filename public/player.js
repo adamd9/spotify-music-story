@@ -310,7 +310,10 @@ function hasCustomCredentials() {
 
 // Get redirect URI (always /callback on current origin)
 function getRedirectUri() {
-    return window.location.origin + '/callback';
+    let origin = window.location.origin;
+    // Spotify requires 127.0.0.1 instead of localhost
+    origin = origin.replace('localhost', '127.0.0.1');
+    return origin + '/callback';
 }
 
 // Get active credentials (custom or default from server)
