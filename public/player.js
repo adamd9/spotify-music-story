@@ -1550,17 +1550,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         dbg('Generate button not found at script parse time');
     }
 
-    // Fallback: delegated listener in case DOM timing prevented direct binding
-    document.addEventListener('click', (e) => {
-        const t = e.target;
-        if (!t) return;
-        const btn = t.closest ? t.closest('#generate-doc') : null;
-        if (btn) {
-            dbg('Delegated click caught for #generate-doc');
-            handleGenerateDocClick();
-        }
-    });
-
     // Load by ID
     if (loadIdBtn && loadIdInput) {
         // Trigger load on button click
