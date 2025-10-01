@@ -10,6 +10,7 @@ Additional rules:
 - Style and voice: write like a professional music journalist. Be vivid, precise, and informative. If a style persona is provided, adopt it subtly without exaggeration.
 - Chronology: the entire documentary MUST proceed strictly in chronological order.
 - Opening narration (first timeline item MUST be narration): introduce that this is a short audio documentary, state the artist/band and the specific scope (era covered), and set expectations for what will be explored.
+- **Narration titles**: EVERY narration segment MUST include a `title` field with a short, descriptive title (3-6 words) that captures the essence of that segment. Examples: "Introduction: The Early Years", "Breakthrough Moment", "Studio Innovation", "Cultural Impact", "Legacy and Influence". These titles will be displayed in the playlist UI.
 - Per-song lead-ins: before EACH song, include a narration segment that (a) introduces the song about to play by title and year, and (b) provides concise historical context about the band and the moment around that release (context, influences, impact, scene, or production).
 - Respect any timing target specified in the user instructions by adjusting sentence count as needed.
 - Each song should be suitable to search on Spotify via a helpful `spotify_query` string such as "Song Title artist:Band Name". Prefer including `track_id` and `track_uri` if known or when selecting from a provided catalog.

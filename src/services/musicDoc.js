@@ -20,9 +20,9 @@ async function generateMusicDoc({ topic, prompt, catalog, narrationTargetSecs })
           properties: {
             type: { type: 'string', enum: ['narration', 'song'] },
             // narration item
-            text: { type: 'string' },
+            title: { type: 'string' },  // Title for both narration and song
+            text: { type: 'string' },   // Narration text
             // song item
-            title: { type: 'string' },
             artist: { type: 'string' },
             album: { type: 'string' },
             year: { type: 'string' },

@@ -373,10 +373,11 @@ function buildPlaylistFromDoc(doc) {
                 if (entry.type === 'narration') {
                     narrationCount += 1;
                     const ttsUrl = entry.tts_url || entry.ttsUrl || entry.url || '/audio/voice-of-character-montervillain-expressions-132288.mp3';
+                    const narrationTitle = entry.title || `Narration ${narrationCount}`;
                     newPlaylist.push({
                         type: 'mp3',
                         id: `narration-${narrationCount - 1}`,
-                        name: `Narration ${narrationCount}`,
+                        name: narrationTitle,
                         artist: 'Narrator',
                         albumArt: DEFAULT_ALBUM_ART,
                         duration: 0,
@@ -405,10 +406,11 @@ function buildPlaylistFromDoc(doc) {
                     const seg = doc.narration_segments[item.narration_index];
                     if (!seg) return;
                     const ttsUrl = seg.tts_url || seg.ttsUrl || seg.url || '/audio/voice-of-character-montervillain-expressions-132288.mp3';
+                    const narrationTitle = seg.title || `Narration ${item.narration_index + 1}`;
                     newPlaylist.push({
                         type: 'mp3',
                         id: `narration-${item.narration_index}`,
-                        name: `Narration ${item.narration_index + 1}`,
+                        name: narrationTitle,
                         artist: 'Narrator',
                         albumArt: DEFAULT_ALBUM_ART,
                         duration: 0,
