@@ -145,8 +145,8 @@ app.get('/login', (req, res) => {
   const state = generateRandomString(16);
   const scope = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state';
   
-  // Dynamically construct redirect URI based on request origin
-  const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
+  // Get redirect URI from query param (provided by frontend)
+  const redirectUri = req.query.redirect_uri || `${req.protocol}://${req.get('host')}/callback`;
   
   res.redirect('https://accounts.spotify.com/authorize?' +
     querystring.stringify({
@@ -163,8 +163,8 @@ app.get('/callback', (req, res) => {
   const code = req.query.code || null;
   const state = req.query.state || null;
   
-  // Dynamically construct redirect URI based on request origin
-  const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
+  // Get redirect URI from query param (provided by frontend) or construct from request
+  const redirectUri = req.query.redirect_uri || `${req.protocol}://${req.get('host')}/callback`;
 
   if (state === null) {
     res.redirect('/#' + querystring.stringify({ error: 'state_mismatch' }));

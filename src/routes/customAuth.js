@@ -10,14 +10,14 @@ const config = require('../config');
 
 // Login with custom credentials
 router.get('/login-custom', (req, res) => {
-  const { client_id } = req.query;
+  const { client_id, redirect_uri } = req.query;
   
   if (!client_id) {
     return res.status(400).send('Missing client_id');
   }
   
-  // Redirect URI is always /callback on the current host
-  const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
+  // Get redirect URI from query param (provided by frontend) or construct from request
+  const redirectUri = redirect_uri || `${req.protocol}://${req.get('host')}/callback`;
 
   const scope = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state';
   const state = Math.random().toString(36).substring(7);

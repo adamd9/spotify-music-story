@@ -750,17 +750,22 @@ function setupEventListeners() {
     // UI Event Listeners
     if (loginButton) {
         loginButton.addEventListener('click', () => {
+            const redirectUri = getRedirectUri();
             // Check if custom credentials are configured
             const creds = getCustomCredentials();
             if (creds && creds.clientId) {
                 // Use custom auth flow
                 const params = new URLSearchParams({
-                    client_id: creds.clientId
+                    client_id: creds.clientId,
+                    redirect_uri: redirectUri
                 });
                 window.location.href = `/login-custom?${params.toString()}`;
             } else {
                 // Use default auth flow
-                window.location.href = '/login';
+                const params = new URLSearchParams({
+                    redirect_uri: redirectUri
+                });
+                window.location.href = `/login?${params.toString()}`;
             }
         });
     }
@@ -1287,17 +1292,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const loginBtn = document.getElementById('login-button');
     if (loginBtn) {
         loginBtn.addEventListener('click', () => {
+            const redirectUri = getRedirectUri();
             // Check if custom credentials are configured
             const creds = getCustomCredentials();
             if (creds && creds.clientId) {
                 // Use custom auth flow
                 const params = new URLSearchParams({
-                    client_id: creds.clientId
+                    client_id: creds.clientId,
+                    redirect_uri: redirectUri
                 });
                 window.location.href = `/login-custom?${params.toString()}`;
             } else {
                 // Use default auth flow
-                window.location.href = '/login';
+                const params = new URLSearchParams({
+                    redirect_uri: redirectUri
+                });
+                window.location.href = `/login?${params.toString()}`;
             }
         });
     }
