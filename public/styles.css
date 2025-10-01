@@ -508,9 +508,9 @@ header p {
 }
 
 .btn-primary:hover {
-    background-color: #1ed760;
+    background-color: var(--primary-light);
     transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(29, 185, 84, 0.3);
+    box-shadow: 0 5px 15px rgba(118, 75, 162, 0.4);
 }
 
 /* Section cards (Create / My Playlists / Import) */
